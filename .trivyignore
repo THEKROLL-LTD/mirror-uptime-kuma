@@ -94,20 +94,22 @@ CVE-2026-31802
 # protocols return XML, parsed by fxp).
 #
 # Exploit prerequisite: an attacker-controlled XML response from a game
-# server that uptime-kuma is configured to monitor. Realistic if you point
-# a gamedig monitor at an untrusted host or a community game server that
-# later gets compromised.
+# server that uptime-kuma is configured to monitor — a malicious response
+# triggers admin-XSS (25896) or backend-DoS (25128/26278/33036).
 #
-# **NOT WAIVED HERE** — these ARE reachable in production if you use the
-# gamedig monitor type. Decision left to the deploying operator: either
-# disable gamedig monitors, point them only at trusted hosts, or accept
-# the risk. Listed below for documentation; remove the leading `#` to
-# waive when you've made the decision for your deployment.
+# Waived for THIS deployment because the gamedig monitor type is not used.
+# server/monitor-types/gamedig.js is dead code in our setup; fast-xml-parser
+# is loaded into the require-graph but never invoked. If a gamedig monitor
+# is ever added, this waiver MUST be revisited (revert this section to the
+# commented-out form and rebuild) — the CVEs are real and reachable as
+# soon as the monitor is configured.
 #
-# CVE-2026-25128
-# CVE-2026-25896
-# CVE-2026-26278
-# CVE-2026-33036
+# Revisit immediately if a gamedig monitor is added, when louislam bumps
+# fast-xml-parser to >= 5.5.6, or by 2026-11 — whichever first.
+CVE-2026-25128
+CVE-2026-25896
+CVE-2026-26278
+CVE-2026-33036
 
 # CVE-2026-41242 (CRITICAL, CVSS 9.8) — protobufjs arbitrary code execution
 # via "type" field in .proto definitions. Fix in protobufjs 7.5.5 / 8.0.1.
@@ -117,14 +119,18 @@ CVE-2026-31802
 # supplied by the user via the gRPC-monitor configuration UI, then decodes
 # gRPC responses against them. A malicious .proto pasted into a monitor
 # config triggers arbitrary code execution in the Node.js process at next
-# poll.
+# poll — admin → server-RCE in the container.
 #
-# **NOT WAIVED HERE** — this IS reachable in production for any user with
-# monitor-create rights. Decision left to the deploying operator: either
-# disable gRPC monitors, restrict monitor-creation to trusted admins with
-# 2FA, or accept the privilege-escalation risk.
+# Waived for THIS deployment because the gRPC monitor type is not used.
+# server/monitor-types/grpc.js and the protobufjs decode path are
+# unreachable in our setup. If a gRPC monitor is ever added, this waiver
+# MUST be revisited (revert this section to the commented-out form and
+# rebuild) — the RCE is real and triggers on the first poll of any
+# attacker-controlled .proto.
 #
-# CVE-2026-41242
+# Revisit immediately if a gRPC monitor is added, when louislam bumps
+# protobufjs to >= 7.5.5, or by 2026-11 — whichever first.
+CVE-2026-41242
 
 # CVE-2026-4800 — lodash _.template imports key injection (HIGH, CVSS 8.1).
 # Fix in lodash 4.18.0+. uptime-kuma 2.3.0 pulls lodash 4.17.23
