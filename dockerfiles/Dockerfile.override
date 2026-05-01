@@ -1,0 +1,181 @@
+# Dockerfile.override for louislam/uptime-kuma
+# -----------------------------------------------------------------------------
+# Path 3 — full re-base. Replaces the upstream Dockerfile chain entirely
+# (`docker/dockerfile`, which depends on the prebuilt
+# `louislam/uptime-kuma:base2` and `:builder-go` images on Docker Hub).
+#
+# Why we don't use the upstream prebuilt bases
+# --------------------------------------------
+# `louislam/uptime-kuma:base2` is a black box: built outside our pipeline,
+# unaudited, on louislam's CI. If that account or build infra is ever
+# compromised, we inherit it. Path 3 builds the same userland from
+# `node:22-bookworm-slim` directly, so:
+#
+#   - Every apt package comes from Debian's signed repos via *our* GHA runner
+#   - Security updates land at Debian's cadence (typically days), not at
+#     louislam's release cadence (typically weeks)
+#   - The Go-healthcheck binary is rebuilt from `golang:1.22-bookworm` —
+#     upstream still uses `golang:1-buster`, which has been EOL since 2024
+#
+# What we replicate from upstream's base2 chain
+# ---------------------------------------------
+# All features preserved (no deployment changes for users):
+#   - sqlite3 (CLI), ca-certificates, iputils-ping (ping monitor), util-linux,
+#     dumb-init (PID 1), curl, sudo + nscd (DNS caching), python3-paho-mqtt
+#   - apprise (.deb fetched dynamically, same as upstream — see notes below)
+#   - cloudflared (Cloudflare tunnel monitor) from Cloudflare's apt repo
+#   - chromium + fonts-{indic,noto,noto-cjk} (real-browser monitor)
+#   - mariadb-server (UPTIME_KUMA_ENABLE_EMBEDDED_MARIADB)
+#
+# Trade-offs we accept
+# --------------------
+#   - Single arch (linux/amd64). Upstream ships armv7+arm64+amd64; armv7 is
+#     dropped because cloudflared's apt repo doesn't ship armv7 and our
+#     deployments are amd64. Adding arm64 later is a workflow change
+#     (docker/setup-qemu-action + platforms list), not an override change.
+#   - apprise version: upstream's `extra/download-apprise.mjs` scrapes
+#     Debian testing for the latest .deb. We replicate that 1:1, so our
+#     apprise version drifts daily with our nightly builds. Trivy scans the
+#     installed version and an SBOM is emitted; if a malicious update ever
+#     ships, we have the audit trail to roll back via `image-pin.yml`.
+#   - Image is large (~1.5 GB) because chromium + mariadb-server + fonts.
+#     This is the cost of "no feature loss." A future :slim variant could
+#     drop chromium/mariadb for ~200 MB but loses browser/embedded-DB
+#     monitor types.
+#
+# Runs as USER node (UID 1000) by default — equivalent to upstream's
+# `:rootless` variant. Upstream's default `:release` runs as root; we don't
+# replicate that.
+
+# Multi-arch manifest digests resolved 2026-05-01.
+# Renovate (see renovate.json.example, pinDigests: true) bumps these.
+ARG NODE_BASE=node:22-bookworm-slim@sha256:d415caac2f1f77b98caaf9415c5f807e14bc8d7bdea62561ea2fef4fbd08a73c
+ARG GOLANG_BASE=golang:1.22-bookworm@sha256:3d699e4d15d0f8f13c9195c0632a16702b8cbdece2955af1c23b37ae5d55a253
+
+# === Stage 1: healthcheck binary ============================================
+# Replaces upstream's docker/builder-go.dockerfile (golang:1-buster, EOL).
+FROM ${GOLANG_BASE} AS healthcheck-build
+WORKDIR /src
+COPY ./extra/healthcheck.go ./
+RUN CGO_ENABLED=0 GOOS=linux go build \
+      -trimpath \
+      -ldflags='-s -w' \
+      -o /out/healthcheck \
+      ./healthcheck.go
+
+# === Stage 2: apprise .deb fetch ============================================
+# Replicates upstream's docker/debian-base.dockerfile `download-apprise` stage.
+# Identical scrape-Debian-testing behavior — see trade-offs note above.
+FROM ${NODE_BASE} AS apprise-fetch
+WORKDIR /tmp
+COPY ./extra/download-apprise.mjs ./
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y curl ca-certificates && \
+    npm install --no-save cheerio semver && \
+    node ./download-apprise.mjs && \
+    rm -rf /var/lib/apt/lists/*
+# Output: /tmp/apprise.deb
+
+# === Stage 3: hardened base (replaces upstream's :base2-slim + :base2) ======
+FROM ${NODE_BASE} AS base
+ARG TARGETPLATFORM
+
+# OCI labels surface this image as our build, not louislam's, on inspect.
+LABEL org.opencontainers.image.source="https://github.com/louislam/uptime-kuma" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.title="uptime-kuma (mirror build)" \
+      org.opencontainers.image.description="Hardened mirror build of louislam/uptime-kuma. Built by THEKROLL's oss-mirror-build pipeline." \
+      org.opencontainers.image.vendor="THEKROLL"
+
+# 3a. Slim-base apt set — same as upstream's :base2-slim minus chromium/maria.
+# `apt-get -y autoremove` after each install cleans up build-only deps that
+# slipped in via Recommends despite --no-install-recommends.
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+      sqlite3 \
+      ca-certificates \
+      iputils-ping \
+      util-linux \
+      dumb-init \
+      curl \
+      sudo \
+      nscd \
+      python3-paho-mqtt \
+    && rm -rf /var/lib/apt/lists/* && apt-get -y autoremove
+
+# 3b. apprise from staged .deb. The .deb is installed and then removed from
+# the layer to avoid shipping it; apt's installed-package metadata stays.
+COPY --from=apprise-fetch /tmp/apprise.deb /tmp/apprise.deb
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y /tmp/apprise.deb && \
+    rm -f /tmp/apprise.deb && \
+    rm -rf /var/lib/apt/lists/* && apt-get -y autoremove
+
+# 3c. cloudflared from Cloudflare's signed apt repo. The keyring file is
+# checked-in via signed-by, so apt verifies every fetch.
+RUN curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg \
+      --output /usr/share/keyrings/cloudflare-main.gpg && \
+    echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared bookworm main' \
+      > /etc/apt/sources.list.d/cloudflared.list && \
+    apt-get update && \
+    apt-get install --no-install-recommends -y cloudflared && \
+    cloudflared version && \
+    rm -rf /var/lib/apt/lists/* && apt-get -y autoremove
+
+# 3d. Browser-monitor + embedded-MariaDB stack.
+ENV UPTIME_KUMA_ENABLE_EMBEDDED_MARIADB=1
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+      chromium \
+      fonts-indic \
+      fonts-noto \
+      fonts-noto-cjk \
+      mariadb-server \
+    && rm -rf /var/lib/apt/lists/* && apt-get -y autoremove && \
+    chown -R node:node /var/lib/mysql
+
+# 3e. Upstream's nscd config + sudoers (lets node run nscd via sudo).
+COPY ./docker/etc/nscd.conf /etc/nscd.conf
+COPY ./docker/etc/sudoers /etc/sudoers
+
+# === Stage 4: build (npm ci + vite build) ===================================
+# Upstream's CI runs `npm run build` on the host BEFORE `docker build` and
+# expects a pre-existing `dist/` in the build context. Our pipeline only
+# does `docker build`, so we run vite inside the build stage. Final image
+# size matches upstream's because we prune dev deps before the COPY.
+FROM base AS build
+USER node
+WORKDIR /app
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1
+
+COPY --chown=node:node .npmrc package.json package-lock.json ./
+# Full install (incl. devDeps) so vite can run.
+RUN npm ci --no-audit --no-fund
+
+COPY --chown=node:node . .
+
+# Run the frontend build, then prune to prod-only deps. `npm prune --omit=dev`
+# is faster than a fresh `npm ci --omit=dev` because most of node_modules is
+# already populated.
+RUN npm run build && \
+    npm prune --omit=dev --no-audit --no-fund && \
+    rm -rf node_modules/.cache .npmrc
+
+COPY --chown=node:node --from=healthcheck-build /out/healthcheck ./extra/healthcheck
+
+RUN mkdir ./data
+
+# === Stage 5: release ========================================================
+FROM base AS release
+WORKDIR /app
+ENV UPTIME_KUMA_IS_CONTAINER=1
+
+COPY --chown=node:node --from=build /app /app
+
+USER node
+EXPOSE 3001
+VOLUME /app/data
+HEALTHCHECK --interval=60s --timeout=30s --start-period=180s --retries=5 \
+  CMD extra/healthcheck
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["node", "server/server.js"]
