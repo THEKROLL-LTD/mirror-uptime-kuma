@@ -14,8 +14,10 @@
 #   - Every apt package comes from Debian's signed repos via *our* GHA runner
 #   - Security updates land at Debian's cadence (typically days), not at
 #     louislam's release cadence (typically weeks)
-#   - The Go-healthcheck binary is rebuilt from `golang:1.22-bookworm` —
-#     upstream still uses `golang:1-buster`, which has been EOL since 2024
+#   - The Go-healthcheck binary is rebuilt from `golang:1.26-bookworm` —
+#     upstream still uses `golang:1-buster` (Go 1.22, Debian Buster EOL 2024).
+#     Bumping to 1.26 wipes ten Go-stdlib CVEs that Trivy otherwise flags
+#     against our binary (TLS / x509 / net/url / archive/zip DoS classes).
 #
 # What we replicate from upstream's base2 chain
 # ---------------------------------------------
@@ -50,7 +52,7 @@
 # Multi-arch manifest digests resolved 2026-05-01.
 # Renovate (see renovate.json.example, pinDigests: true) bumps these.
 ARG NODE_BASE=node:22-bookworm-slim@sha256:d415caac2f1f77b98caaf9415c5f807e14bc8d7bdea62561ea2fef4fbd08a73c
-ARG GOLANG_BASE=golang:1.22-bookworm@sha256:3d699e4d15d0f8f13c9195c0632a16702b8cbdece2955af1c23b37ae5d55a253
+ARG GOLANG_BASE=golang:1.26-bookworm@sha256:47ce5636e9936b2c5cbf708925578ef386b4f8872aec74a67bd13a627d242b19
 
 # === Stage 1: healthcheck binary ============================================
 # Replaces upstream's docker/builder-go.dockerfile (golang:1-buster, EOL).
