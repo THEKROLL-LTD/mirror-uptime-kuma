@@ -82,6 +82,17 @@ RUN apt-get update && \
 FROM ${NODE_BASE} AS base
 ARG TARGETPLATFORM
 
+# APT_REFRESH is a daily UTC date string forwarded by the CI workflow
+# (mirror-build.yml: "Compute APT_REFRESH date" step). BuildKit hashes
+# RUN layers on (parent + command string) — without this arg, an
+# unchanged Dockerfile re-uses the cached apt layer forever and never
+# picks up new Debian security advisories. Threading the date into the
+# first apt-using RUN below bumps the hash once per UTC day, which is
+# the cadence Debian publishes security updates at. Within a day, cache
+# reuse is unaffected. Default `unset` keeps local `docker build` runs
+# working without the build-arg.
+ARG APT_REFRESH=unset
+
 # OCI labels surface this image as our build, not louislam's, on inspect.
 LABEL org.opencontainers.image.source="https://github.com/louislam/uptime-kuma" \
       org.opencontainers.image.licenses="MIT" \
@@ -91,8 +102,11 @@ LABEL org.opencontainers.image.source="https://github.com/louislam/uptime-kuma" 
 
 # 3a. Slim-base apt set — same as upstream's :base2-slim minus chromium/maria.
 # `apt-get -y autoremove` after each install cleans up build-only deps that
-# slipped in via Recommends despite --no-install-recommends.
-RUN apt-get update && \
+# slipped in via Recommends despite --no-install-recommends. The first line
+# threads APT_REFRESH into this layer's hash so daily rebuilds re-resolve
+# apt rather than reusing a stale cached layer (see ARG APT_REFRESH above).
+RUN echo "apt-refresh=${APT_REFRESH}" > /etc/.apt-refresh && \
+    apt-get update && \
     apt-get install --no-install-recommends -y \
       sqlite3 \
       ca-certificates \
