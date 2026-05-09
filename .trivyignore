@@ -145,6 +145,31 @@ CVE-2026-41242
 # upstream redbean-node release), or 2026-11.
 CVE-2026-4800
 
+# CVE-2026-44665 — fast-xml-builder@1.1.5 attribute-quote bypass (HIGH).
+# Fix in fast-xml-builder 1.1.7. uptime-kuma 2.3.2 pulls 1.1.5 transitively:
+#
+#   mongodb (optionalDependencies)
+#    -> @aws-sdk/credential-providers
+#        -> @aws-sdk/core
+#            -> @aws-sdk/xml-builder
+#                -> fast-xml-parser
+#                    -> fast-xml-builder
+#
+# Three independent reasons the CVE is unreachable in this image:
+#  1. Optional path: the @aws-sdk chain only loads when a MongoDB monitor
+#     is configured with AWS-IAM auth (MongoDB Atlas). Not used here.
+#  2. Wrong protocol class: @aws-sdk/xml-builder constructs XML request
+#     bodies for S3/SES/SQS/SNS. The only AWS client present in this
+#     dependency chain is @aws-sdk/client-cognito-identity, which speaks
+#     JSON / query-string — xml-builder is never invoked along this path.
+#  3. CVE shape: it's an output-encoding bug requiring attacker-controlled
+#     values to be passed as XML attribute strings in outgoing AWS
+#     requests. All AWS-call inputs in uptime-kuma originate from
+#     admin-supplied monitor config, not from external probe targets.
+#
+# Revisit when louislam bumps mongodb / fast-xml-parser, or by 2026-08-09.
+CVE-2026-44665
+
 # ============================================================================
 # Go-binary findings — vendored in cloudflared (the tunnel client we install
 # from Cloudflare's apt repo). cloudflared is run only when the user
@@ -211,3 +236,18 @@ CVE-2026-34986
 #
 # Revisit when Cloudflare ships a fresh cloudflared .deb, or 2026-09.
 CVE-2026-39883
+
+# CVE-2026-29181 — go.opentelemetry.io/otel multi-value `baggage` header
+# extraction allocates excessively (HIGH, remote DoS amplification).
+# Fix in otel 1.41.0. Vendored inside cloudflared at v1.40.0.
+#
+# Affected codepath: otel's HTTP propagator parses incoming `baggage`
+# headers on a server endpoint. cloudflared in this image runs as the
+# tunnel CLIENT — outbound to Cloudflare's edge, not a local HTTP server.
+# An attacker can only reach an inbound baggage parser by compromising
+# Cloudflare's edge first, which is outside our threat model. The
+# in-container `cloudflared metrics` HTTP server is bound to a Unix
+# socket / localhost only, reachable only by the in-container `node` UID.
+#
+# Revisit when Cloudflare ships a fresh cloudflared .deb, or 2026-09.
+CVE-2026-29181
