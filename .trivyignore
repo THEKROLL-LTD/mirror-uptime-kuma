@@ -132,6 +132,91 @@ CVE-2026-33036
 # protobufjs to >= 7.5.5, or by 2026-11 — whichever first.
 CVE-2026-41242
 
+# CVE-2026-44289, CVE-2026-44290, CVE-2026-44291, CVE-2026-44293 — protobufjs
+# follow-on family disclosed 2026-05 alongside the upstream 7.5.6 / 8.0.2
+# patch release. Same library, same call-site, same reachability story as
+# CVE-2026-41242 above — waived for the same reason and tracked as one unit
+# so the next louislam bump closes them all together.
+#
+# Severities and shapes:
+#   - CVE-2026-44289 (HIGH, CVSS 7.5) — DoS via unbounded protobuf message
+#     recursion during decode. Attacker-supplied wire bytes with deeply
+#     nested submessages cause stack exhaustion / event-loop stall.
+#   - CVE-2026-44290 (HIGH, CVSS 7.5) — process-wide DoS through unsafe
+#     option-path traversal. Crafted option strings in a .proto definition
+#     trigger pathological resolution.
+#   - CVE-2026-44291 (HIGH, CVSS 8.1) — code-generation gadget reachable
+#     after prototype pollution: if an attacker can first pollute
+#     Object.prototype (separate primitive), protobufjs's generated decoder
+#     becomes an RCE sink. Pre-condition required, but chained with any
+#     prototype-pollution gadget in the dep tree this is server-RCE.
+#   - CVE-2026-44293 (HIGH, CVSS 8.1) — code injection via attacker-
+#     controlled `bytes` field default values flowing into generated
+#     toObject() code. Triggered when decoding a message whose .proto
+#     definition contains a malicious default.
+#
+# Fix floor for all four: protobufjs 7.5.6 / 8.0.2. uptime-kuma 2.3.2 pins
+# `"protobufjs": "~7.2.6"` in its top-level package.json (verified against
+# louislam/uptime-kuma@2.3.2 — direct dependency of the server runtime,
+# not transitive). The tilde range allows only 7.2.x; a rebuild on top of
+# the same upstream tag resolves to 7.2.6 again. Closing these CVEs at the
+# library level therefore REQUIRES an upstream uptime-kuma release that
+# bumps the constraint. No combination of base-image bump, npm cache
+# refresh, or override patch on our side can resolve them — patching
+# package.json downstream would mean carrying a runtime-code fork, which
+# violates this repo's "build-system fork only, no source-code fork"
+# invariant (see oss-mirror-build/README.md positioning section).
+#
+# Reachability in THIS deployment (single load-bearing argument, shared
+# across all four CVE shapes):
+#
+#   protobufjs is imported by exactly one runtime call site in the
+#   uptime-kuma server: server/monitor-types/grpc.js. That module loads a
+#   user-supplied .proto definition from the gRPC-monitor configuration
+#   UI and decodes incoming gRPC responses against it. Every one of these
+#   four CVEs needs that exact call path to fire:
+#     - 44289 / 44293 trigger on decode() of attacker-shaped wire bytes
+#       (44289) or .proto defaults (44293) — gRPC monitor active.
+#     - 44290 triggers on .proto option parsing — gRPC monitor active.
+#     - 44291 triggers on the generated decoder running against a
+#       prototype-polluted Object.prototype — gRPC monitor active AND a
+#       prior prototype-pollution primitive, both gated behind admin-only
+#       monitor configuration.
+#
+#   We do NOT use the gRPC monitor type in any deployment of this image.
+#   server/monitor-types/grpc.js is present in the require graph (loaded
+#   by the monitor-type registry at boot) but its decode pathway is never
+#   invoked because no monitor instance of that type is configured in our
+#   uptime-kuma databases. The vulnerable protobufjs functions are
+#   statically present but dynamically unreachable.
+#
+#   Defence-in-depth: even if a gRPC monitor were added, the .proto
+#   definition is admin-supplied via the authenticated uptime-kuma UI. An
+#   unauthenticated remote attacker cannot reach the decode path without
+#   first compromising an admin account, at which point server RCE is
+#   already trivially available through other monitor types (e.g., the
+#   shell-script monitor). The CVEs would convert an admin into a
+#   slightly faster RCE, not introduce a new privilege boundary.
+#
+# Risk acceptance: zero exposure for this image in its configured use as
+# our internal uptime monitor. Logged here, not silently muted, so the
+# next reviewer sees both the shape of the CVEs and the exact precondition
+# that would invalidate the waiver.
+#
+# Revisit triggers (any one reverts the waiver):
+#   1. A gRPC monitor is added to any uptime-kuma instance running this
+#      image — revert IMMEDIATELY, do not wait for the calendar trigger.
+#      CVE-2026-44291's RCE shape in particular makes this non-optional.
+#   2. louislam publishes an uptime-kuma release that bumps protobufjs to
+#      >= 7.5.6 (likely 2.4.0 or a 2.3.x patch) — clear all four lines
+#      and rebuild.
+#   3. Calendar fallback: 2026-11 — re-examine even if neither 1 nor 2
+#      has happened, in case the threat model has shifted.
+CVE-2026-44289
+CVE-2026-44290
+CVE-2026-44291
+CVE-2026-44293
+
 # CVE-2026-4800 — lodash _.template imports key injection (HIGH, CVSS 8.1).
 # Fix in lodash 4.18.0+. uptime-kuma 2.3.0 pulls lodash 4.17.23
 # transitively via redbean-node (the SQLite ORM).
