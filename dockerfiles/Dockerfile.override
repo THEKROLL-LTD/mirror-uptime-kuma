@@ -110,8 +110,18 @@ LABEL org.opencontainers.image.source="https://github.com/louislam/uptime-kuma" 
 # slipped in via Recommends despite --no-install-recommends. The first line
 # threads APT_REFRESH into this layer's hash so daily rebuilds re-resolve
 # apt rather than reusing a stale cached layer (see ARG APT_REFRESH above).
+#
+# `apt-get upgrade -y` sweeps the BASE IMAGE's pre-installed packages
+# forward to the current bookworm-security state. Without it, libraries
+# inherited from node:22-bookworm-slim (e.g. libgnutls30, libssl3, libc6)
+# stay pinned to whatever version the base image shipped with — daily
+# Debian security advisories only land when Docker Hub republishes the
+# base tag (~weekly). The cache-bust above keeps apt indexes fresh; this
+# line is what actually applies them. Subsequent stages (3b/3c/3d) only
+# `install` new packages, so the upgrade pass needs to run once here.
 RUN echo "apt-refresh=${APT_REFRESH}" > /etc/.apt-refresh && \
     apt-get update && \
+    apt-get -y upgrade && \
     apt-get install --no-install-recommends -y \
       sqlite3 \
       ca-certificates \

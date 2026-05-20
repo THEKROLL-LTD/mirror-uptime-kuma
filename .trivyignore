@@ -336,3 +336,56 @@ CVE-2026-39883
 #
 # Revisit when Cloudflare ships a fresh cloudflared .deb, or 2026-09.
 CVE-2026-29181
+
+# CVE-2026-33811, CVE-2026-33814, CVE-2026-39820, CVE-2026-39836, CVE-2026-42499
+# — Go stdlib DoS family, this time vendored in cloudflared at Go 1.26.2.
+# Fix: stdlib >= 1.25.10 / 1.26.3.
+#
+# Background — why this is a separate waiver block from the 25679/32280/...
+# group above: between 2026-05-03 (uptime-kuma 2.3.2 release) and 2026-05-20
+# Cloudflare republished cloudflared with a fresh Go toolchain, jumping
+# 1.24.13 -> 1.26.2. That cleared the four 1.24.13 DoS CVEs (which is why
+# they have not regressed) but exposed five new 1.26.2 stdlib CVEs that
+# weren't yet known when Cloudflare cut the package. Same library, same
+# binary path (/usr/bin/cloudflared), same reachability story as the
+# 1.24.13 waiver block — just chasing a moving Go-version target. The
+# 1.24.13 CVE IDs above stay listed for audit-trail continuity (deleting
+# them would erase the history that those CVEs were ever waived, and
+# Trivy ignores already-cleared IDs harmlessly).
+#
+# Per-CVE shape:
+#   - CVE-2026-33811 (HIGH) — LookupCNAME with cgo DNS resolver: a very
+#     long CNAME response causes resource exhaustion in the resolver.
+#   - CVE-2026-33814 (HIGH) — HTTP/2 SETTINGS frame handling enters an
+#     infinite loop on a crafted frame, hanging the transport.
+#   - CVE-2026-39820 (HIGH) — net/mail ParseAddress*/ParseAddressList
+#     pathological inputs cause DoS.
+#   - CVE-2026-39836 (HIGH) — Windows-only panic in Dial/LookupPort on
+#     NUL bytes in net inputs. Our container runs Linux — the panic path
+#     is platform-gated dead code here. Listed anyway for completeness.
+#   - CVE-2026-42499 (HIGH) — pathological inputs to net/mail
+#     consumePhrase cause DoS during header parsing.
+#
+# Reachability in our deployment is identical to the 1.24.13 block above
+# and the otel/grpc waivers below:
+#   1. cloudflared sits idle unless a Cloudflare Tunnel monitor is
+#      explicitly configured in uptime-kuma's UI — we don't run one in
+#      any deployment of this image.
+#   2. Even when active, cloudflared connects as a CLIENT to Cloudflare's
+#      edge. The DoS-class inputs would need to come from a Cloudflare-
+#      edge compromise, outside our threat model.
+#   3. CVE-2026-39836 is platform-gated to Windows; not reachable on
+#      Linux containers regardless of monitor configuration.
+#
+# Cloudflare can't bump Go faster than upstream Go cuts patch releases;
+# 1.26.3 landed 2026-05-19 and will reach pkg.cloudflare.com in a fresh
+# .deb on Cloudflare's usual ~few-weeks cadence. Until then, these are
+# version-match findings without a code path that an attacker reaches.
+#
+# Revisit when Cloudflare ships a fresh cloudflared .deb (typically every
+# few weeks; check pkg.cloudflare.com), or 2026-09 — whichever first.
+CVE-2026-33811
+CVE-2026-33814
+CVE-2026-39820
+CVE-2026-39836
+CVE-2026-42499
