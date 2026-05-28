@@ -308,6 +308,34 @@ CVE-2026-44665
 #  3. Calendar fallback: 2026-11.
 CVE-2026-45618
 
+# CVE-2026-45617 (HIGH) — liquidjs ReDoS via quadratic backtracking in the
+# `strip_html` filter regex. Fix in liquidjs 10.26.0 — same library, same
+# pin, same call-site as CVE-2026-45618 above (installed 10.25.7; the
+# `~10.25.0` constraint in uptime-kuma's package.json keeps a rebuild on
+# 10.25.x, so this is NOT closable by a rebuild and tracks as one unit with
+# 45618 until an upstream liquidjs bump).
+#
+# Shape and reachability (weaker than 45618's RCE):
+#  - DoS only. A pathological input string fed through the `strip_html`
+#    filter causes quadratic backtracking and stalls the Node event loop.
+#  - Two preconditions, both required: (a) an admin-authored notification
+#    template that actually uses the `strip_html` filter — not the default
+#    templates — AND (b) the filtered string is attacker-influenced. The
+#    only externally-influenced values reaching the render context are
+#    `msg` / fields of monitorJSON (e.g. a monitor name or status text);
+#    the template itself is admin-supplied via the authenticated UI.
+#  - Worst case is a single-process event-loop stall in the notification
+#    send path, not RCE and not a privilege-boundary crossing.
+#
+# Accepted for our deployment: our notification templates do not use the
+# `strip_html` filter, so the vulnerable regex is never reached. Even if it
+# were, the impact ceiling is a transient DoS of the notification worker.
+#
+# Revisit triggers: a notification template using `strip_html` is added; or
+# louislam bumps liquidjs to >= 10.26.0 (clears this together with 45618);
+# or 2026-11.
+CVE-2026-45617
+
 # ============================================================================
 # Go-binary findings — vendored in cloudflared (the tunnel client we install
 # from Cloudflare's apt repo). cloudflared is run only when the user
