@@ -255,6 +255,59 @@ CVE-2026-4800
 # Revisit when louislam bumps mongodb / fast-xml-parser, or by 2026-08-09.
 CVE-2026-44665
 
+# CVE-2026-45618 (CRITICAL, CVSS 10.0) — liquidjs template-injection RCE.
+# Fix in liquidjs 10.26.0. uptime-kuma 2.3.2 pins `"liquidjs": "~10.25.0"`
+# as a DIRECT dependency in its top-level package.json (verified against
+# louislam/uptime-kuma@2.3.2). The tilde range allows only 10.25.x; a
+# rebuild on the same upstream tag resolves back to 10.25.x, never 10.26.0.
+# Closing this at the library level therefore REQUIRES an upstream uptime-
+# kuma release that bumps the constraint — same situation as the protobufjs
+# block above. No base-image bump, npm cache refresh, or override patch on
+# our side resolves it; patching package.json downstream would be a
+# runtime-code fork, violating this repo's "build-system fork only, no
+# source-code fork" invariant (see oss-mirror-build/README.md).
+#
+# Honest reachability — this is NOT dead code like the gamedig/gRPC blocks.
+# The vulnerable parse()/render() path is a live, commonly-used feature:
+#
+#   liquidjs is loaded by server/notification-providers/notification-
+#   provider.js::renderTemplate(), called by 14 notification providers
+#   (telegram, smtp, webhook, discord, slack, matrix, ntfy, ...). When a
+#   notification has "Use Template" enabled, the provider passes a
+#   user-authored template string (e.g. notification.telegramTemplate, or
+#   the custom message body) to engine.parse() + engine.render(). The
+#   CVE's valueOf-filter / Function-constructor gadget fires on parse of a
+#   crafted template — engine constructor opts (relativeReference:false,
+#   bogus root) do NOT block it. Trigger is the "Test" button (renders
+#   immediately) or the next real notification send -> arbitrary JS in the
+#   Node process = RCE in the container as the `node` user.
+#
+# Why we accept the risk for THIS deployment:
+#  1. Injection surface is the TEMPLATE STRING only. Monitored-target data
+#     (msg / monitorJSON / heartbeatJSON) flows into the render *context*,
+#     not the parsed template — so there is NO SSTI from external probe
+#     responses. The template is settable solely through the authenticated
+#     uptime-kuma notification-config UI/API.
+#  2. The template field is admin/operator-supplied. An unauthenticated
+#     remote attacker cannot reach the parser. The CVSS 10.0 base score
+#     assumes attacker-controlled templates with no auth, which does not
+#     hold here.
+#  3. Residual risk is an ESCALATION chain, not first access: an operator
+#     account takeover (CSRF / XSS / credential theft) would convert a
+#     session compromise into full container RCE. We accept this for our
+#     single-operator internal deployment, where notification editing is
+#     not exposed to lower-privileged or untrusted users.
+#
+# Revisit triggers (any one reverts the waiver):
+#  1. Notification editing becomes reachable by non-admin / untrusted users
+#     in any deployment of this image — revert IMMEDIATELY; the auth gate
+#     that this waiver rests on is then gone.
+#  2. louislam publishes an uptime-kuma release bumping liquidjs to
+#     >= 10.26.0 (likely a 2.3.x patch or 2.4.0) — clear this line and
+#     rebuild.
+#  3. Calendar fallback: 2026-11.
+CVE-2026-45618
+
 # ============================================================================
 # Go-binary findings — vendored in cloudflared (the tunnel client we install
 # from Cloudflare's apt repo). cloudflared is run only when the user
