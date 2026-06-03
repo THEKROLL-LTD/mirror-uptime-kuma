@@ -169,6 +169,16 @@ RUN apt-get update && \
 COPY ./docker/etc/nscd.conf /etc/nscd.conf
 COPY ./docker/etc/sudoers /etc/sudoers
 
+# 3f. Let's Encrypt Gen Y roots (added upstream in 2.4.0,
+# docker/debian-base.dockerfile). Debian bookworm's ca-certificates does not
+# ship ISRG's Gen Y root certs yet. uptime-kuma monitors arbitrary HTTPS
+# endpoints, so without these any target whose chain roots in the new LE
+# Gen Y roots would fail TLS validation. Fetched over TLS that still chains
+# to the in-store ISRG X roots, then folded into the system trust store.
+RUN curl -fsSL https://letsencrypt.org/certs/gen-y/root-ye.pem -o /usr/local/share/ca-certificates/isrg-root-ye.crt && \
+    curl -fsSL https://letsencrypt.org/certs/gen-y/root-yr.pem -o /usr/local/share/ca-certificates/isrg-root-yr.crt && \
+    update-ca-certificates
+
 # === Stage 4: build (npm ci + vite build) ===================================
 # Upstream's CI runs `npm run build` on the host BEFORE `docker build` and
 # expects a pre-existing `dist/` in the build context. Our pipeline only
