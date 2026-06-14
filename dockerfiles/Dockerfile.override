@@ -57,7 +57,7 @@
 # Cloudflare .deb and is tracked separately in .trivyignore.
 # Renovate (see renovate.json.example, pinDigests: true) bumps these.
 ARG NODE_BASE=node:22-bookworm-slim@sha256:d415caac2f1f77b98caaf9415c5f807e14bc8d7bdea62561ea2fef4fbd08a73c
-ARG GOLANG_BASE=golang:1.26.3-bookworm@sha256:42c54f63d17473e15b9dbfb86043a2cea5edb295d6c99d46f9aa5826943a6752
+ARG GOLANG_BASE=golang:1.26.4-bookworm@sha256:5f68ec6805843bd3981a951ffada82a26a0bd2631045c8f7dba483fa868f5ec5
 
 # === Stage 1: healthcheck binary ============================================
 # Replaces upstream's docker/builder-go.dockerfile (golang:1-buster, EOL).

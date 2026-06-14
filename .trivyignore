@@ -470,3 +470,28 @@ CVE-2026-33814
 CVE-2026-39820
 CVE-2026-39836
 CVE-2026-42499
+
+# ============================================================================
+# npm-layer findings — @grpc/grpc-js (uptime-kuma's package-lock.json)
+# ============================================================================
+# @grpc/grpc-js 1.8.22, fixed in 1.9.16 / 1.10.12 / 1.11.4 / 1.12.7 / 1.13.5 /
+# 1.14.4. Transitive runtime dependency present in the image's node_modules.
+# Bumping it is upstream's call — we mirror louislam's lockfile verbatim and
+# do not override npm versions (same policy as the rest of this file). Both
+# are DoS-only (process crash); neither yields code execution or data access.
+# Revisit when louislam bumps @grpc/grpc-js (next uptime-kuma release that
+# touches the lockfile), or by 2026-11 — whichever first.
+
+# CVE-2026-48068 — "a malformed request can cause a server crash."
+# Server-side sink. uptime-kuma uses grpc-js only as a CLIENT (the gRPC
+# monitor dials out to a user-configured endpoint); it does not operate a
+# gRPC server, so the vulnerable server code path is not present.
+CVE-2026-48068
+
+# CVE-2026-48069 — "an incoming malformed compressed message can cause a
+# client or server crash." Client path is reachable only if an operator
+# configures a gRPC monitor pointing at a hostile/malfunctioning endpoint
+# that returns a malformed compressed message — operator-controlled,
+# self-inflicted DoS of the monitoring process. Not exposed to untrusted
+# inbound traffic.
+CVE-2026-48069
