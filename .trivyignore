@@ -495,3 +495,160 @@ CVE-2026-48068
 # self-inflicted DoS of the monitoring process. Not exposed to untrusted
 # inbound traffic.
 CVE-2026-48069
+
+# ============================================================================
+# 2.4.0 rescan wave (2026-07) — npm-layer findings surfaced by the CVE
+# database advancing after the image was built. The chromium fraction of the
+# same rescan (all CRITICALs + most HIGHs) is NOT waived: it clears on a
+# rebuild because Debian bookworm now ships chromium 150.0.7871.100-1~deb12u1,
+# above every fix floor. Only the npm-layer CVEs below need waivers — they are
+# pinned in uptime-kuma's package-lock.json@2.4.0 and a same-tag rebuild
+# re-resolves the same versions (fix floors sit outside the tilde ranges), so
+# they close only on an upstream uptime-kuma release. Same "build-system fork
+# only, no source-code fork" invariant as the protobufjs/liquidjs blocks above.
+# ============================================================================
+
+# CVE-2026-48712 — protobufjs Denial of Service via uncontrolled recursion
+# with a crafted protobuf payload (HIGH). Fix in protobufjs 7.6.1 / 8.4.1.
+# uptime-kuma 2.4.0 pins `"protobufjs": "~7.2.6"` directly; installed 7.2.6.
+# The tilde range keeps a rebuild on 7.2.x, so this is NOT rebuild-closable.
+#
+# Same library, same single call site, same reachability story as the
+# CVE-2026-41242 / 44289–44293 protobufjs block above: server/monitor-types/
+# grpc.js loads a user-supplied .proto and decodes gRPC responses against it.
+# The recursion-DoS fires on decode() of attacker-shaped wire bytes — gRPC
+# monitor active. We do NOT use the gRPC monitor type in any deployment of
+# this image; grpc.js sits in the require graph but its decode path is never
+# invoked. DoS only (event-loop stall of the monitoring process).
+#
+# Revisit triggers (any one reverts the waiver):
+#   1. A gRPC monitor is added to any instance running this image — revert.
+#   2. louislam bumps protobufjs to >= 7.6.1 — clears this together with the
+#      41242 / 44289–44293 block.
+#   3. Calendar fallback: 2026-11.
+CVE-2026-48712
+
+# CVE-2026-12151 — undici Denial of Service due to unbounded memory growth
+# via WebSocket frames (HIGH). Fix in undici 6.27.0 / 7.28.0 / 8.5.0.
+# uptime-kuma 2.4.0 pulls undici 6.26.0 into the runtime image transitively
+# via exactly one prod path: node_modules/cheerio/node_modules/undici. (The
+# other two copies in the lockfile — 7.26.0 via testcontainers, 5.29.0
+# top-level — are dev=true and pruned by `npm prune --omit=dev`.)
+#
+# Exploit prerequisite: the application opens an undici WebSocket client to
+# an attacker-controlled server that then streams frames to exhaust memory.
+# cheerio uses undici only for its optional load-from-URL fetch helper;
+# uptime-kuma feeds cheerio already-fetched HTML strings (keyword monitor),
+# never a URL, so cheerio's undici path — and thus the WebSocket client — is
+# never invoked. The vulnerable code is present but statically unreachable
+# from any uptime-kuma call site. DoS only.
+#
+# Revisit when louislam / cheerio bump undici to >= 6.27.0, or 2026-11.
+CVE-2026-12151
+
+# CVE-2026-52746 — jsonata resource exhaustion via malicious inputs to the
+# "$toMillis" function (HIGH, DoS). Fix in jsonata 2.2.0. uptime-kuma 2.4.0
+# pins `"jsonata": "~2.1.0"` directly; installed 2.1.1. Fix 2.2.0 is outside
+# the tilde range, so NOT rebuild-closable — needs an upstream bump.
+#
+# Reachability: jsonata backs the json-query monitor type — it evaluates a
+# JSONata expression against a monitored endpoint's JSON response. The
+# expression itself (where "$toMillis" would be written) is admin-supplied
+# via the authenticated monitor-config UI; only the evaluated *data* comes
+# from the probe target. Triggering the resource exhaustion requires the
+# operator to author a pathological expression, or attacker-influenced data
+# to reach a $toMillis call inside an operator-written expression. Worst case
+# is a transient event-loop stall of the monitoring process — DoS only, no
+# RCE or privilege-boundary crossing.
+#
+# Revisit when louislam bumps jsonata to >= 2.2.0, or 2026-11.
+CVE-2026-52746
+
+# GHSA-p6gq-j5cr-w38f — nodemailer message-level `raw` option bypasses
+# disableFileAccess / disableUrlAccess, enabling arbitrary file/URL access
+# (HIGH). Fix in nodemailer 9.0.1. uptime-kuma 2.4.0 pins `"nodemailer":
+# "~7.0.13"` directly; installed 7.0.13. Fix 9.0.1 is two majors out, so NOT
+# rebuild-closable — needs an upstream bump.
+#
+# Reachability: nodemailer is the SMTP notification provider. The bypass
+# requires the caller to set the message-level `raw` option with attacker-
+# controlled content. uptime-kuma's smtp provider constructs the message from
+# admin-configured notification settings (subject/body/recipients) and does
+# not expose the `raw` option to external/probe input. Reaching the bug needs
+# an operator to craft a malicious `raw` message via the authenticated
+# notification-config UI — an escalation from an already-authenticated admin,
+# not a new privilege boundary for a remote attacker.
+#
+# Revisit when louislam bumps nodemailer to >= 9.0.1, or 2026-11.
+GHSA-p6gq-j5cr-w38f
+
+# CVE-2026-12143 — form-data form-field override via CRLF injection (HIGH).
+# Fix in form-data 4.0.6 (also 2.5.6 / 3.0.5). uptime-kuma 2.4.0 pins
+# `"form-data": "~4.0.5"` directly; installed 4.0.5. Although 4.0.6 is inside
+# the `~4.0.5` range, `npm ci` installs the lockfile-pinned 4.0.5 verbatim, so
+# a same-tag rebuild does NOT pick it up — closable only when louislam
+# refreshes the lockfile.
+#
+# Exploit prerequisite: an attacker must control a multipart field name or
+# filename that uptime-kuma passes into a form-data body, letting injected
+# CRLF sequences forge additional multipart fields in an OUTBOUND request.
+# uptime-kuma builds multipart bodies only in notification/monitor code with
+# field names hardcoded by the provider; no external/probe input flows into a
+# form-data field name. Integrity of an outbound request at worst, not a
+# server-side compromise.
+#
+# Revisit when louislam refreshes the lockfile to form-data >= 4.0.6, or
+# 2026-11.
+CVE-2026-12143
+
+# CVE-2026-48815 — sigstore `certificateOIDs` verification constraints are
+# silently dropped and never enforced (HIGH). Fix in sigstore 4.1.1.
+#
+# NOTE: sigstore is NOT a uptime-kuma dependency — it does not appear in
+# uptime-kuma's package-lock.json at all. Trivy flags it because npm itself
+# bundles `sigstore` (for package-provenance verification) inside the
+# node:22-bookworm-slim base image at /usr/local/lib/node_modules/npm/. Our
+# container runs `node server/server.js` and never executes `npm install`, so
+# the sigstore verification code is never reached at runtime — it is npm
+# tooling that sits dormant in the image.
+#
+# This is closable two ways, neither being the source rebuild: (a) a NODE_BASE
+# digest bump to a node:22-bookworm-slim that bundles npm with sigstore
+# >= 4.1.1 (Renovate territory, pinDigests), or (b) this waiver. Waived for
+# now because it is runtime-unreachable; will clear naturally on the next
+# NODE_BASE bump.
+#
+# Revisit on the next NODE_BASE digest bump, or 2026-11.
+CVE-2026-48815
+
+# CVE-2026-48779 — ws Denial of Service via memory exhaustion from small
+# WebSocket fragments (HIGH). Fix in ws 8.21.0 (also 5.2.5 / 6.2.4 / 7.5.11).
+# uptime-kuma 2.4.0 carries ws in the runtime image as: 8.19.0 (direct,
+# `"ws": "~8.19.0"`), 8.20.1 (via engine.io / engine.io-client /
+# socket.io-adapter — the socket.io transport), and 7.5.11 (via mqtt). All
+# below the 8.21.0 fix; the tilde/transitive pins keep a rebuild below it, so
+# NOT rebuild-closable — needs an upstream bump.
+#
+# Honest exposure — unlike the other entries in this wave, this one IS
+# network-reachable pre-auth: the 8.20.1 copies back socket.io, i.e. the
+# uptime-kuma dashboard's real-time WebSocket channel. A client can open that
+# socket before authenticating and stream tiny fragments to grow server
+# memory. So the "admin-gated" argument does NOT apply here.
+#
+# Why we accept the risk for THIS deployment:
+#  1. Impact is memory-exhaustion DoS only — the process may be OOM-killed and
+#     restarted by the container runtime. No RCE, no data access, no
+#     privilege-boundary crossing.
+#  2. Same posture as the liquidjs CVE-2026-45618 acceptance above: this
+#     image's dashboard is not exposed to untrusted networks — it runs on our
+#     internal segment behind network controls, so the pre-auth socket is not
+#     reachable by arbitrary remote clients.
+#  3. mqtt's 7.5.11 copy is a monitor-side WebSocket *client* (self-inflicted
+#     only), not an inbound server surface.
+#
+# Revisit triggers (any one reverts the waiver):
+#  1. This image's dashboard becomes reachable from an untrusted network —
+#     revert; the containment that this waiver rests on is then gone.
+#  2. louislam bumps ws / socket.io to pull ws >= 8.21.0 — clear and rebuild.
+#  3. Calendar fallback: 2026-11.
+CVE-2026-48779
