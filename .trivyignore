@@ -471,6 +471,40 @@ CVE-2026-39820
 CVE-2026-39836
 CVE-2026-42499
 
+# CVE-2026-39822 (HIGH) — Go stdlib os.Root symlink-following directory
+# traversal, vendored in cloudflared, now at Go 1.26.4.
+# Fix: stdlib >= 1.25.12 / 1.26.5 / 1.27.0-rc.2.
+#
+# Continuation of the moving-Go-version target above: Cloudflare has since
+# republished cloudflared jumping 1.26.2 -> 1.26.4. That cleared nothing
+# relevant here but exposed CVE-2026-39822, disclosed after the 1.26.4
+# .deb was cut. Same binary path (/usr/bin/cloudflared), same reachability
+# story as every cloudflared Go-stdlib waiver above.
+#
+# NOTE — this CVE ID ALSO applied to OUR stage-1 healthcheck binary, which
+# we build ourselves. That occurrence is FIXED, not waived: GOLANG_BASE was
+# bumped 1.26.4 -> 1.26.5-bookworm (see dockerfiles/Dockerfile.override).
+# This waiver therefore covers only the cloudflared-vendored copy, which we
+# can't bump without Cloudflare rebuilding the .deb. A single .trivyignore
+# line can't scope by binary, so it mutes both — acceptable because our own
+# occurrence is remediated at the source and can't regress below 1.26.5
+# without an override change that would surface in review.
+#
+# Reachability: os.Root traversal requires an os.Root call reached with an
+# attacker-controlled path. cloudflared's filesystem operations run on
+# operator- and config-supplied paths (config, certs, logs), never on
+# network-reachable input. As with the 1.24.13 / 1.26.2 blocks:
+#   1. cloudflared sits idle unless a Cloudflare Tunnel monitor is
+#      explicitly configured — we run none in any deployment of this image.
+#   2. Even when active, cloudflared is a CLIENT to Cloudflare's edge; a
+#      malicious path would require a Cloudflare-edge compromise, outside
+#      our threat model.
+# Version-match finding without an attacker-reachable code path.
+#
+# Revisit when Cloudflare ships a fresh cloudflared .deb (typically every
+# few weeks; check pkg.cloudflare.com), or 2026-09 — whichever first.
+CVE-2026-39822
+
 # ============================================================================
 # npm-layer findings — @grpc/grpc-js (uptime-kuma's package-lock.json)
 # ============================================================================
