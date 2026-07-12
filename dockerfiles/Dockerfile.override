@@ -55,9 +55,15 @@
 # fixed in Go 1.26.3 / 1.25.10). Affects the healthcheck binary we build
 # in stage 1; cloudflared still ships its own (older) Go runtime via the
 # Cloudflare .deb and is tracked separately in .trivyignore.
+# GOLANG_BASE bumped 2026-07-12 to 1.26.5-bookworm for CVE-2026-39822 (HIGH,
+# os.Root symlink-following directory traversal, fixed in Go 1.26.5). The
+# healthcheck binary never calls os.Root on attacker-controlled paths, so
+# this is a version-stamp finding with no runtime vector — bumped rather
+# than waived because a stable fix exists and all other issue-#18 findings
+# clear on the same rebuild.
 # Renovate (see renovate.json.example, pinDigests: true) bumps these.
 ARG NODE_BASE=node:22-bookworm-slim@sha256:d415caac2f1f77b98caaf9415c5f807e14bc8d7bdea62561ea2fef4fbd08a73c
-ARG GOLANG_BASE=golang:1.26.4-bookworm@sha256:5f68ec6805843bd3981a951ffada82a26a0bd2631045c8f7dba483fa868f5ec5
+ARG GOLANG_BASE=golang:1.26.5-bookworm@sha256:18aedc16aa19b3fd7ded7245fc14b109e054d65d22ed53c355c899582bbb2113
 
 # === Stage 1: healthcheck binary ============================================
 # Replaces upstream's docker/builder-go.dockerfile (golang:1-buster, EOL).
