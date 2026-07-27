@@ -1,85 +1,34 @@
-# .trivyignore — waivers for Trivy findings you have reviewed and accepted.
+# .trivyignore — findings reviewed and accepted.
 #
-# Add one CVE ID per line. Comments above the ID are part of the file's git
-# history and become your audit trail for why a finding is not being fixed.
-# A waiver without a reason is just a mute button, not evidence.
+# One block per finding: what it is, why it is not fixable here, why it is not
+# reachable, when to revisit. Cleared waivers are deleted, not kept — git log
+# has the history. Default calendar revisit for everything: 2026-11.
 #
-# Convention: each block records the attack vector, where the dep lives in
-# uptime-kuma, why the exploit prerequisite is not met, and a 2026-11 /
-# next-louislam-bump revisit trigger. Same pattern as mirror-Plausible.
+# Deployment assumptions the "REVERT IF" markers guard: no gRPC monitor, no
+# gamedig monitor, no Cloudflare Tunnel monitor, dashboard not reachable from
+# untrusted networks.
 
 # ============================================================================
-# npm-layer findings (uptime-kuma's package-lock.json, mirrored verbatim)
+# uptime-kuma npm deps. `npm ci` installs package-lock.json verbatim, so a
+# same-tag rebuild never moves these — only an upstream lockfile change does.
+# Overriding the pins downstream would be a source fork, which this repo does
+# not do (see oss-mirror-build/README.md).
 # ============================================================================
 
-# CVE-2026-22029 was the react-router XSS in mirror-Plausible — not present
-# here (uptime-kuma uses Vue, not React). No waiver needed.
-
-# CVE-2026-26996, CVE-2026-27903, CVE-2026-27904 — minimatch ReDoS family
-# (each HIGH, CVSS 7.5, DoS only).
-# Fixes spread across minimatch branches; floor for all three is 3.1.4.
-# uptime-kuma 2.3.0 pulls minimatch 9.0.3 transitively through eslint /
-# archiver-utils / readdir-glob / glob — all dev-time or build-time.
-#
-# Exploit prerequisite for the entire family: the GLOB PATTERN itself must
-# be attacker-controlled. uptime-kuma's call sites feed minimatch only with
-# hardcoded patterns from the maintainer's source; no untrusted-pattern
-# code path exists.
-#
-# Impact class: process hang in the CI build runner if exploited (which
-# requires upstream-source-write privilege). Not reachable at runtime by
-# any image consumer.
-#
-# Revisit when louislam bumps the dev-tool transitive chain, or by 2026-11
-# — whichever first.
+# minimatch ReDoS (HIGH, DoS). Needs an attacker-controlled glob pattern.
+# server/ has no minimatch call site.
 CVE-2026-26996
 CVE-2026-27903
 CVE-2026-27904
 
-# CVE-2026-33671 — picomatch ReDoS via crafted extglob patterns
-# (HIGH, CVSS 7.5, DoS only). Fix in picomatch 4.0.4.
-# uptime-kuma 2.3.0 pulls picomatch 4.0.3 transitively via chokidar and the
-# eslint ecosystem.
-#
-# Same shape as the minimatch family: requires attacker-controlled glob
-# pattern. Not reachable in uptime-kuma's call sites (chokidar watch globs
-# in compile.js are hardcoded; eslint patterns come from the maintainer's
-# config).
-#
-# Revisit when louislam bumps chokidar / eslint / rollup, or 2026-11.
-CVE-2026-33671
-
-# CVE-2025-64756 — glob CLI command injection (HIGH, CVSS 7.5).
-# Fix in glob 10.5.0+ / 11.1.0. uptime-kuma 2.3.0 pulls glob 10.3.16 and
-# 7.2.3 transitively.
-#
-# Exploit prerequisite: the `glob -c <command>` CLI form must be invoked
-# with attacker-controllable filenames. Programmatic glob() API calls are
-# unaffected. uptime-kuma exclusively uses the programmatic API; the CLI
-# is never spawned by application code.
-#
-# Revisit on next louislam dep bump, or 2026-11.
+# glob CLI command injection (HIGH). Only the `glob -c <cmd>` CLI form is
+# affected; uptime-kuma uses the programmatic API and never spawns the CLI.
 CVE-2025-64756
 
-# CVE-2026-23745, 23950, 24842, 26960, 29786, 31802 — node-tar (six CVEs,
-# HIGH, archive-extraction path traversal / hardlink / symlink class).
-# Fix floor: 7.5.11.
-# uptime-kuma 2.3.0 pins tar 6.2.1 directly.
-#
-# Exploit prerequisite for the entire family: the application must call
-# tar.x() / tar extraction with an attacker-controlled archive. uptime-kuma's
-# only `require('tar')` sites are extra/download-dist.js (run via
-# `npm run setup` at install time, downloads dist.tar.gz from GitHub
-# releases) and extra/release/lib.mjs (release-tooling, never on the
-# server). The runtime image (server/server.js and what it reaches) does
-# not require('tar').
-#
-# Even the install-time reachability is gated: download-dist.js extracts
-# the .tar.gz served by GitHub releases for louislam/uptime-kuma. A
-# compromise of those releases would already be a supply-chain class
-# outside of this CVE's scope.
-#
-# Revisit when louislam bumps tar (likely on 2.4.x), or 2026-11.
+# node-tar 6.2.1, extraction path-traversal / hardlink / symlink family
+# (HIGH). Fix floor 7.5.11 — a major jump from the `~6.2.1` pin.
+# Only require("tar") sites are extra/download-dist.js (install-time) and
+# extra/release/lib.mjs (release tooling); not in the server runtime graph.
 CVE-2026-23745
 CVE-2026-23950
 CVE-2026-24842
@@ -87,602 +36,121 @@ CVE-2026-26960
 CVE-2026-29786
 CVE-2026-31802
 
-# CVE-2026-25128, CVE-2026-25896 (CRIT 9.3), CVE-2026-26278, CVE-2026-33036
-# — fast-xml-parser (four CVEs, fix floor 5.5.6).
-# uptime-kuma 2.3.0 pulls fast-xml-parser 5.2.5 transitively via gamedig
-# (server/monitor-types/gamedig.js queries game servers; some game
-# protocols return XML, parsed by fxp).
-#
-# Exploit prerequisite: an attacker-controlled XML response from a game
-# server that uptime-kuma is configured to monitor — a malicious response
-# triggers admin-XSS (25896) or backend-DoS (25128/26278/33036).
-#
-# Waived for THIS deployment because the gamedig monitor type is not used.
-# server/monitor-types/gamedig.js is dead code in our setup; fast-xml-parser
-# is loaded into the require-graph but never invoked. If a gamedig monitor
-# is ever added, this waiver MUST be revisited (revert this section to the
-# commented-out form and rebuild) — the CVEs are real and reachable as
-# soon as the monitor is configured.
-#
-# Revisit immediately if a gamedig monitor is added, when louislam bumps
-# fast-xml-parser to >= 5.5.6, or by 2026-11 — whichever first.
-CVE-2026-25128
-CVE-2026-25896
-CVE-2026-26278
-CVE-2026-33036
+# node-tar 6.2.1, second wave: gzip-bomb DoS (59873 — NVD says CRITICAL, GHSA
+# CVSS is 7.5 A:H, availability only) and an infinite loop in tar.replace()
+# (59874). Fixes 7.5.19 / 7.5.18. Same unreachability as the block above;
+# tar.replace() is additionally never called anywhere in uptime-kuma.
+# REVERT IF: a runtime require("tar") appears upstream.
+CVE-2026-59873
+CVE-2026-59874
 
-# CVE-2026-41242 (CRITICAL, CVSS 9.8) — protobufjs arbitrary code execution
-# via "type" field in .proto definitions. Fix in protobufjs 7.5.5 / 8.0.1.
-# uptime-kuma 2.3.0 pins protobufjs ~7.2.6 directly.
-#
-# Reachability: server/monitor-types/grpc.js loads .proto definitions
-# supplied by the user via the gRPC-monitor configuration UI, then decodes
-# gRPC responses against them. A malicious .proto pasted into a monitor
-# config triggers arbitrary code execution in the Node.js process at next
-# poll — admin → server-RCE in the container.
-#
-# Waived for THIS deployment because the gRPC monitor type is not used.
-# server/monitor-types/grpc.js and the protobufjs decode path are
-# unreachable in our setup. If a gRPC monitor is ever added, this waiver
-# MUST be revisited (revert this section to the commented-out form and
-# rebuild) — the RCE is real and triggers on the first poll of any
-# attacker-controlled .proto.
-#
-# Revisit immediately if a gRPC monitor is added, when louislam bumps
-# protobufjs to >= 7.5.5, or by 2026-11 — whichever first.
+# brace-expansion 2.1.1 + 1.1.15: exponential expand() (13149) and unbounded
+# result length causing an uncatchable OOM (14257). DoS only.
+# 14257 is patched ONLY in 5.0.8 — the 1.x/2.x maintenance branches (1.1.16,
+# 2.1.2) predate the advisory, so nobody downstream of glob/minimatch can fix
+# it yet. Reachable only via minimatch/glob patterns; server/ has no such call
+# site.
+CVE-2026-13149
+CVE-2026-14257
+
+# protobufjs 7.2.6 — RCE via crafted .proto (41242, CVSS 9.8), plus the
+# follow-on family: decode recursion DoS (44289), option-path DoS (44290),
+# prototype-pollution codegen gadget (44291, CVSS 8.1), bytes-default code
+# injection (44293, CVSS 8.1), and uncontrolled recursion DoS (48712).
+# Fix floors 7.5.5 / 7.5.6 / 7.6.1, all outside the `~7.2.6` pin.
+# Single call site: server/monitor-types/grpc.js decodes gRPC responses
+# against a user-supplied .proto. We run no gRPC monitor, so the decode path
+# is never invoked. Even with one, the .proto is admin-supplied via the
+# authenticated UI.
+# REVERT IF: a gRPC monitor is added — 41242 and 44291 are RCE shapes.
 CVE-2026-41242
-
-# CVE-2026-44289, CVE-2026-44290, CVE-2026-44291, CVE-2026-44293 — protobufjs
-# follow-on family disclosed 2026-05 alongside the upstream 7.5.6 / 8.0.2
-# patch release. Same library, same call-site, same reachability story as
-# CVE-2026-41242 above — waived for the same reason and tracked as one unit
-# so the next louislam bump closes them all together.
-#
-# Severities and shapes:
-#   - CVE-2026-44289 (HIGH, CVSS 7.5) — DoS via unbounded protobuf message
-#     recursion during decode. Attacker-supplied wire bytes with deeply
-#     nested submessages cause stack exhaustion / event-loop stall.
-#   - CVE-2026-44290 (HIGH, CVSS 7.5) — process-wide DoS through unsafe
-#     option-path traversal. Crafted option strings in a .proto definition
-#     trigger pathological resolution.
-#   - CVE-2026-44291 (HIGH, CVSS 8.1) — code-generation gadget reachable
-#     after prototype pollution: if an attacker can first pollute
-#     Object.prototype (separate primitive), protobufjs's generated decoder
-#     becomes an RCE sink. Pre-condition required, but chained with any
-#     prototype-pollution gadget in the dep tree this is server-RCE.
-#   - CVE-2026-44293 (HIGH, CVSS 8.1) — code injection via attacker-
-#     controlled `bytes` field default values flowing into generated
-#     toObject() code. Triggered when decoding a message whose .proto
-#     definition contains a malicious default.
-#
-# Fix floor for all four: protobufjs 7.5.6 / 8.0.2. uptime-kuma 2.3.2 pins
-# `"protobufjs": "~7.2.6"` in its top-level package.json (verified against
-# louislam/uptime-kuma@2.3.2 — direct dependency of the server runtime,
-# not transitive). The tilde range allows only 7.2.x; a rebuild on top of
-# the same upstream tag resolves to 7.2.6 again. Closing these CVEs at the
-# library level therefore REQUIRES an upstream uptime-kuma release that
-# bumps the constraint. No combination of base-image bump, npm cache
-# refresh, or override patch on our side can resolve them — patching
-# package.json downstream would mean carrying a runtime-code fork, which
-# violates this repo's "build-system fork only, no source-code fork"
-# invariant (see oss-mirror-build/README.md positioning section).
-#
-# Reachability in THIS deployment (single load-bearing argument, shared
-# across all four CVE shapes):
-#
-#   protobufjs is imported by exactly one runtime call site in the
-#   uptime-kuma server: server/monitor-types/grpc.js. That module loads a
-#   user-supplied .proto definition from the gRPC-monitor configuration
-#   UI and decodes incoming gRPC responses against it. Every one of these
-#   four CVEs needs that exact call path to fire:
-#     - 44289 / 44293 trigger on decode() of attacker-shaped wire bytes
-#       (44289) or .proto defaults (44293) — gRPC monitor active.
-#     - 44290 triggers on .proto option parsing — gRPC monitor active.
-#     - 44291 triggers on the generated decoder running against a
-#       prototype-polluted Object.prototype — gRPC monitor active AND a
-#       prior prototype-pollution primitive, both gated behind admin-only
-#       monitor configuration.
-#
-#   We do NOT use the gRPC monitor type in any deployment of this image.
-#   server/monitor-types/grpc.js is present in the require graph (loaded
-#   by the monitor-type registry at boot) but its decode pathway is never
-#   invoked because no monitor instance of that type is configured in our
-#   uptime-kuma databases. The vulnerable protobufjs functions are
-#   statically present but dynamically unreachable.
-#
-#   Defence-in-depth: even if a gRPC monitor were added, the .proto
-#   definition is admin-supplied via the authenticated uptime-kuma UI. An
-#   unauthenticated remote attacker cannot reach the decode path without
-#   first compromising an admin account, at which point server RCE is
-#   already trivially available through other monitor types (e.g., the
-#   shell-script monitor). The CVEs would convert an admin into a
-#   slightly faster RCE, not introduce a new privilege boundary.
-#
-# Risk acceptance: zero exposure for this image in its configured use as
-# our internal uptime monitor. Logged here, not silently muted, so the
-# next reviewer sees both the shape of the CVEs and the exact precondition
-# that would invalidate the waiver.
-#
-# Revisit triggers (any one reverts the waiver):
-#   1. A gRPC monitor is added to any uptime-kuma instance running this
-#      image — revert IMMEDIATELY, do not wait for the calendar trigger.
-#      CVE-2026-44291's RCE shape in particular makes this non-optional.
-#   2. louislam publishes an uptime-kuma release that bumps protobufjs to
-#      >= 7.5.6 (likely 2.4.0 or a 2.3.x patch) — clear all four lines
-#      and rebuild.
-#   3. Calendar fallback: 2026-11 — re-examine even if neither 1 nor 2
-#      has happened, in case the threat model has shifted.
 CVE-2026-44289
 CVE-2026-44290
 CVE-2026-44291
 CVE-2026-44293
+CVE-2026-48712
 
-# CVE-2026-4800 — lodash _.template imports key injection (HIGH, CVSS 8.1).
-# Fix in lodash 4.18.0+. uptime-kuma 2.3.0 pulls lodash 4.17.23
-# transitively via redbean-node (the SQLite ORM).
-#
-# Exploit prerequisite: application calls _.template(..., { imports: {
-# ATTACKER_CONTROLLED_KEY: ... } }). redbean-node uses lodash for utility
-# functions, never for template rendering. _.template is not invoked
-# anywhere in the uptime-kuma server runtime.
-#
-# Revisit when redbean-node bumps lodash (already done in 4.18.0; awaiting
-# upstream redbean-node release), or 2026-11.
+# lodash 4.17.23 (nested under redbean-node; top-level is already 4.18.1) —
+# _.template imports key injection (HIGH). redbean-node uses lodash for
+# utility functions only; _.template is never invoked.
 CVE-2026-4800
 
-# CVE-2026-44665 — fast-xml-builder@1.1.5 attribute-quote bypass (HIGH).
-# Fix in fast-xml-builder 1.1.7. uptime-kuma 2.3.2 pulls 1.1.5 transitively:
-#
-#   mongodb (optionalDependencies)
-#    -> @aws-sdk/credential-providers
-#        -> @aws-sdk/core
-#            -> @aws-sdk/xml-builder
-#                -> fast-xml-parser
-#                    -> fast-xml-builder
-#
-# Three independent reasons the CVE is unreachable in this image:
-#  1. Optional path: the @aws-sdk chain only loads when a MongoDB monitor
-#     is configured with AWS-IAM auth (MongoDB Atlas). Not used here.
-#  2. Wrong protocol class: @aws-sdk/xml-builder constructs XML request
-#     bodies for S3/SES/SQS/SNS. The only AWS client present in this
-#     dependency chain is @aws-sdk/client-cognito-identity, which speaks
-#     JSON / query-string — xml-builder is never invoked along this path.
-#  3. CVE shape: it's an output-encoding bug requiring attacker-controlled
-#     values to be passed as XML attribute strings in outgoing AWS
-#     requests. All AWS-call inputs in uptime-kuma originate from
-#     admin-supplied monitor config, not from external probe targets.
-#
-# Revisit when louislam bumps mongodb / fast-xml-parser, or by 2026-08-09.
-CVE-2026-44665
+# undici 6.26.0 via cheerio — WebSocket memory-exhaustion DoS (HIGH).
+# cheerio's undici path is its load-from-URL helper; uptime-kuma feeds cheerio
+# pre-fetched HTML strings, never a URL, so it is never invoked.
+CVE-2026-12151
 
-# CVE-2026-45618 (CRITICAL, CVSS 10.0) — liquidjs template-injection RCE.
-# Fix in liquidjs 10.26.0. uptime-kuma 2.3.2 pins `"liquidjs": "~10.25.0"`
-# as a DIRECT dependency in its top-level package.json (verified against
-# louislam/uptime-kuma@2.3.2). The tilde range allows only 10.25.x; a
-# rebuild on the same upstream tag resolves back to 10.25.x, never 10.26.0.
-# Closing this at the library level therefore REQUIRES an upstream uptime-
-# kuma release that bumps the constraint — same situation as the protobufjs
-# block above. No base-image bump, npm cache refresh, or override patch on
-# our side resolves it; patching package.json downstream would be a
-# runtime-code fork, violating this repo's "build-system fork only, no
-# source-code fork" invariant (see oss-mirror-build/README.md).
-#
-# Honest reachability — this is NOT dead code like the gamedig/gRPC blocks.
-# The vulnerable parse()/render() path is a live, commonly-used feature:
-#
-#   liquidjs is loaded by server/notification-providers/notification-
-#   provider.js::renderTemplate(), called by 14 notification providers
-#   (telegram, smtp, webhook, discord, slack, matrix, ntfy, ...). When a
-#   notification has "Use Template" enabled, the provider passes a
-#   user-authored template string (e.g. notification.telegramTemplate, or
-#   the custom message body) to engine.parse() + engine.render(). The
-#   CVE's valueOf-filter / Function-constructor gadget fires on parse of a
-#   crafted template — engine constructor opts (relativeReference:false,
-#   bogus root) do NOT block it. Trigger is the "Test" button (renders
-#   immediately) or the next real notification send -> arbitrary JS in the
-#   Node process = RCE in the container as the `node` user.
-#
-# Why we accept the risk for THIS deployment:
-#  1. Injection surface is the TEMPLATE STRING only. Monitored-target data
-#     (msg / monitorJSON / heartbeatJSON) flows into the render *context*,
-#     not the parsed template — so there is NO SSTI from external probe
-#     responses. The template is settable solely through the authenticated
-#     uptime-kuma notification-config UI/API.
-#  2. The template field is admin/operator-supplied. An unauthenticated
-#     remote attacker cannot reach the parser. The CVSS 10.0 base score
-#     assumes attacker-controlled templates with no auth, which does not
-#     hold here.
-#  3. Residual risk is an ESCALATION chain, not first access: an operator
-#     account takeover (CSRF / XSS / credential theft) would convert a
-#     session compromise into full container RCE. We accept this for our
-#     single-operator internal deployment, where notification editing is
-#     not exposed to lower-privileged or untrusted users.
-#
-# Revisit triggers (any one reverts the waiver):
-#  1. Notification editing becomes reachable by non-admin / untrusted users
-#     in any deployment of this image — revert IMMEDIATELY; the auth gate
-#     that this waiver rests on is then gone.
-#  2. louislam publishes an uptime-kuma release bumping liquidjs to
-#     >= 10.26.0 (likely a 2.3.x patch or 2.4.0) — clear this line and
-#     rebuild.
-#  3. Calendar fallback: 2026-11.
-CVE-2026-45618
+# jsonata 2.1.1 — $toMillis resource exhaustion (HIGH, DoS). Fix 2.2.0,
+# outside the `~2.1.0` pin. Backs the json-query monitor; the expression is
+# admin-supplied via the authenticated UI, only the evaluated data comes from
+# the probe target. Worst case is a transient event-loop stall.
+CVE-2026-52746
 
-# CVE-2026-45617 (HIGH) — liquidjs ReDoS via quadratic backtracking in the
-# `strip_html` filter regex. Fix in liquidjs 10.26.0 — same library, same
-# pin, same call-site as CVE-2026-45618 above (installed 10.25.7; the
-# `~10.25.0` constraint in uptime-kuma's package.json keeps a rebuild on
-# 10.25.x, so this is NOT closable by a rebuild and tracks as one unit with
-# 45618 until an upstream liquidjs bump).
-#
-# Shape and reachability (weaker than 45618's RCE):
-#  - DoS only. A pathological input string fed through the `strip_html`
-#    filter causes quadratic backtracking and stalls the Node event loop.
-#  - Two preconditions, both required: (a) an admin-authored notification
-#    template that actually uses the `strip_html` filter — not the default
-#    templates — AND (b) the filtered string is attacker-influenced. The
-#    only externally-influenced values reaching the render context are
-#    `msg` / fields of monitorJSON (e.g. a monitor name or status text);
-#    the template itself is admin-supplied via the authenticated UI.
-#  - Worst case is a single-process event-loop stall in the notification
-#    send path, not RCE and not a privilege-boundary crossing.
-#
-# Accepted for our deployment: our notification templates do not use the
-# `strip_html` filter, so the vulnerable regex is never reached. Even if it
-# were, the impact ceiling is a transient DoS of the notification worker.
-#
-# Revisit triggers: a notification template using `strip_html` is added; or
-# louislam bumps liquidjs to >= 10.26.0 (clears this together with 45618);
-# or 2026-11.
-CVE-2026-45617
+# nodemailer 7.0.13 — message-level `raw` bypasses disableFileAccess /
+# disableUrlAccess (HIGH). Fix 9.0.1, two majors out. The smtp provider builds
+# messages from admin-configured settings and never exposes `raw`.
+GHSA-p6gq-j5cr-w38f
 
-# ============================================================================
-# Go-binary findings — vendored in cloudflared (the tunnel client we install
-# from Cloudflare's apt repo). cloudflared is run only when the user
-# configures a Cloudflare Tunnel monitor; otherwise it sits idle in the
-# image with no active code path.
-# ============================================================================
+# form-data 4.0.5 — form-field override via CRLF injection (HIGH). Fix 4.0.6
+# is inside the `~4.0.5` range but the lockfile pins 4.0.5, so it needs an
+# upstream lockfile refresh. Field names are hardcoded per provider; no
+# external input reaches one. Affects integrity of an outbound request only.
+CVE-2026-12143
 
-# CVE-2026-25679, CVE-2026-32280, CVE-2026-32281, CVE-2026-32283 — Go stdlib
-# DoS family in cloudflared's bundled Go runtime (Go 1.24.13).
-# Fix: stdlib >= 1.25.9 / 1.26.2. cloudflared ships its own Go runtime; we
-# can't bump it without rebuilding cloudflared from source (we don't —
-# we install the .deb from pkg.cloudflare.com).
-#
-# Reachability in our deployment: cloudflared's TLS, x509-chain-build, and
-# URL-parsing paths are exercised against Cloudflare's edge (controlled,
-# trusted origin) and against Cloudflare-issued tunnel-control payloads
-# (signed by Cloudflare). The DoS class CVEs all require attacker-supplied
-# malformed input — which would mean a Cloudflare-edge compromise, outside
-# our threat model.
-#
-# Revisit when Cloudflare ships a fresh cloudflared .deb (typically every
-# few weeks; check pkg.cloudflare.com), or 2026-09 — whichever first.
-CVE-2026-25679
-CVE-2026-32280
-CVE-2026-32281
-CVE-2026-32283
+# liquidjs 10.26.0 — the `pop` filter skips memoryLimit accounting. Fix
+# 10.27.1, outside the `~10.26.0` pin.
+# uptime-kuma never configures memoryLimit (no memoryLimit/renderLimit
+# anywhere in the tree), so there is no budget to bypass — patched and
+# unpatched behave identically here. No template uses `pop`.
+# REVERT IF: uptime-kuma starts setting a liquidjs memoryLimit.
+CVE-2026-55575
 
-# CVE-2026-33186 (CRITICAL, CVSS 9.8) — google.golang.org/grpc authz bypass.
-# Fix in grpc-go 1.79.3. Vendored inside cloudflared.
-#
-# Reachability: cloudflared's gRPC endpoints handle the tunnel-control
-# protocol with Cloudflare's edge. The local-side gRPC server (if any)
-# binds to a Unix socket inside the container, accessible only to the
-# in-container `node` user. A network-reachable gRPC authz bypass would
-# require the cloudflared edge-side or in-container access — both outside
-# the remote-attacker threat model for a deployed uptime-kuma.
-#
-# Revisit when Cloudflare ships a fresh cloudflared .deb, or 2026-09.
-CVE-2026-33186
+# axios 0.32.0 — the Node HTTP adapter can read config.proxy off a polluted
+# Object.prototype. Fix 0.33.0 / 1.18.0, outside the `~0.32.0` pin.
+# axios IS the HTTP-monitor engine, so this rests on the exploit chain, not on
+# the library being unused. It needs a REQUEST interceptor returning a
+# plain-object clone; uptime-kuma has none (its only interceptor is a response
+# one, server/modules/axios-ntlm/lib/ntlmClient.js:197), so the config
+# reaching the adapter is still mergeConfig's null-prototype object. It also
+# never sets config.proxy — proxying uses HttpProxyAgent / HttpsProxyAgent /
+# SocksProxyAgent from server/proxy.js.
+# REVERT IF: any interceptors.request.use appears. Grep on every upstream bump.
+GHSA-gcfj-64vw-6mp9
 
-# CVE-2026-34986 — go-jose v4 JWE decryption DoS panic (HIGH).
-# Fix in go-jose 4.1.4. Vendored inside cloudflared.
-#
-# Same waiver shape as the existing CVE-2026-34986 entry in mirror-Gokapi:
-# the JWE-decryption codepath only fires on attacker-supplied JWE tokens.
-# In cloudflared's case, JWE input comes from Cloudflare-signed tunnel
-# tokens — input origin is Cloudflare, not network-reachable to a remote
-# attacker.
-#
-# Revisit when Cloudflare ships a fresh cloudflared .deb, or 2026-09.
-# (Note: this CVE-ID appears in mirror-Gokapi's .trivyignore for a
-# different reason — Gokapi's go-jose use was OIDC-gated. Here it's
-# vendored in cloudflared. Both waivers stand independently.)
-CVE-2026-34986
+# ws 8.19.0 / 8.20.1 / 7.5.11 — memory-exhaustion DoS from small WebSocket
+# fragments (HIGH). Fix 8.21.0.
+# Honest exposure: the 8.20.1 copies back socket.io, i.e. the dashboard's
+# real-time channel, reachable PRE-AUTH. The admin-gated argument does not
+# apply here. Accepted because the impact ceiling is an OOM-kill plus
+# container restart, and this image's dashboard runs on our internal segment.
+# REVERT IF: the dashboard becomes reachable from an untrusted network.
+CVE-2026-48779
 
-# CVE-2026-39883 — opentelemetry-go SDK BSD kenv PATH hijacking (HIGH).
-# Fix in otel-sdk 1.43.0. Vendored inside cloudflared.
-#
-# Affected codepath: BSD-specific `kenv` command lookup using $PATH instead
-# of an absolute path. Linux containers have no `kenv` binary and the
-# affected codepath is dead code on Linux. Our container runs Linux only.
-# This finding is a pure platform-mismatch false-positive at runtime —
-# Trivy flags the version, but the vulnerable function is never reached.
-#
-# Revisit when Cloudflare ships a fresh cloudflared .deb, or 2026-09.
-CVE-2026-39883
-
-# CVE-2026-29181 — go.opentelemetry.io/otel multi-value `baggage` header
-# extraction allocates excessively (HIGH, remote DoS amplification).
-# Fix in otel 1.41.0. Vendored inside cloudflared at v1.40.0.
-#
-# Affected codepath: otel's HTTP propagator parses incoming `baggage`
-# headers on a server endpoint. cloudflared in this image runs as the
-# tunnel CLIENT — outbound to Cloudflare's edge, not a local HTTP server.
-# An attacker can only reach an inbound baggage parser by compromising
-# Cloudflare's edge first, which is outside our threat model. The
-# in-container `cloudflared metrics` HTTP server is bound to a Unix
-# socket / localhost only, reachable only by the in-container `node` UID.
-#
-# Revisit when Cloudflare ships a fresh cloudflared .deb, or 2026-09.
-CVE-2026-29181
-
-# CVE-2026-33811, CVE-2026-33814, CVE-2026-39820, CVE-2026-39836, CVE-2026-42499
-# — Go stdlib DoS family, this time vendored in cloudflared at Go 1.26.2.
-# Fix: stdlib >= 1.25.10 / 1.26.3.
-#
-# Background — why this is a separate waiver block from the 25679/32280/...
-# group above: between 2026-05-03 (uptime-kuma 2.3.2 release) and 2026-05-20
-# Cloudflare republished cloudflared with a fresh Go toolchain, jumping
-# 1.24.13 -> 1.26.2. That cleared the four 1.24.13 DoS CVEs (which is why
-# they have not regressed) but exposed five new 1.26.2 stdlib CVEs that
-# weren't yet known when Cloudflare cut the package. Same library, same
-# binary path (/usr/bin/cloudflared), same reachability story as the
-# 1.24.13 waiver block — just chasing a moving Go-version target. The
-# 1.24.13 CVE IDs above stay listed for audit-trail continuity (deleting
-# them would erase the history that those CVEs were ever waived, and
-# Trivy ignores already-cleared IDs harmlessly).
-#
-# Per-CVE shape:
-#   - CVE-2026-33811 (HIGH) — LookupCNAME with cgo DNS resolver: a very
-#     long CNAME response causes resource exhaustion in the resolver.
-#   - CVE-2026-33814 (HIGH) — HTTP/2 SETTINGS frame handling enters an
-#     infinite loop on a crafted frame, hanging the transport.
-#   - CVE-2026-39820 (HIGH) — net/mail ParseAddress*/ParseAddressList
-#     pathological inputs cause DoS.
-#   - CVE-2026-39836 (HIGH) — Windows-only panic in Dial/LookupPort on
-#     NUL bytes in net inputs. Our container runs Linux — the panic path
-#     is platform-gated dead code here. Listed anyway for completeness.
-#   - CVE-2026-42499 (HIGH) — pathological inputs to net/mail
-#     consumePhrase cause DoS during header parsing.
-#
-# Reachability in our deployment is identical to the 1.24.13 block above
-# and the otel/grpc waivers below:
-#   1. cloudflared sits idle unless a Cloudflare Tunnel monitor is
-#      explicitly configured in uptime-kuma's UI — we don't run one in
-#      any deployment of this image.
-#   2. Even when active, cloudflared connects as a CLIENT to Cloudflare's
-#      edge. The DoS-class inputs would need to come from a Cloudflare-
-#      edge compromise, outside our threat model.
-#   3. CVE-2026-39836 is platform-gated to Windows; not reachable on
-#      Linux containers regardless of monitor configuration.
-#
-# Cloudflare can't bump Go faster than upstream Go cuts patch releases;
-# 1.26.3 landed 2026-05-19 and will reach pkg.cloudflare.com in a fresh
-# .deb on Cloudflare's usual ~few-weeks cadence. Until then, these are
-# version-match findings without a code path that an attacker reaches.
-#
-# Revisit when Cloudflare ships a fresh cloudflared .deb (typically every
-# few weeks; check pkg.cloudflare.com), or 2026-09 — whichever first.
-CVE-2026-33811
-CVE-2026-33814
-CVE-2026-39820
-CVE-2026-39836
-CVE-2026-42499
-
-# CVE-2026-39822 (HIGH) — Go stdlib os.Root symlink-following directory
-# traversal, vendored in cloudflared, now at Go 1.26.4.
-# Fix: stdlib >= 1.25.12 / 1.26.5 / 1.27.0-rc.2.
-#
-# Continuation of the moving-Go-version target above: Cloudflare has since
-# republished cloudflared jumping 1.26.2 -> 1.26.4. That cleared nothing
-# relevant here but exposed CVE-2026-39822, disclosed after the 1.26.4
-# .deb was cut. Same binary path (/usr/bin/cloudflared), same reachability
-# story as every cloudflared Go-stdlib waiver above.
-#
-# NOTE — this CVE ID ALSO applied to OUR stage-1 healthcheck binary, which
-# we build ourselves. That occurrence is FIXED, not waived: GOLANG_BASE was
-# bumped 1.26.4 -> 1.26.5-bookworm (see dockerfiles/Dockerfile.override).
-# This waiver therefore covers only the cloudflared-vendored copy, which we
-# can't bump without Cloudflare rebuilding the .deb. A single .trivyignore
-# line can't scope by binary, so it mutes both — acceptable because our own
-# occurrence is remediated at the source and can't regress below 1.26.5
-# without an override change that would surface in review.
-#
-# Reachability: os.Root traversal requires an os.Root call reached with an
-# attacker-controlled path. cloudflared's filesystem operations run on
-# operator- and config-supplied paths (config, certs, logs), never on
-# network-reachable input. As with the 1.24.13 / 1.26.2 blocks:
-#   1. cloudflared sits idle unless a Cloudflare Tunnel monitor is
-#      explicitly configured — we run none in any deployment of this image.
-#   2. Even when active, cloudflared is a CLIENT to Cloudflare's edge; a
-#      malicious path would require a Cloudflare-edge compromise, outside
-#      our threat model.
-# Version-match finding without an attacker-reachable code path.
-#
-# Revisit when Cloudflare ships a fresh cloudflared .deb (typically every
-# few weeks; check pkg.cloudflare.com), or 2026-09 — whichever first.
-CVE-2026-39822
-
-# ============================================================================
-# npm-layer findings — @grpc/grpc-js (uptime-kuma's package-lock.json)
-# ============================================================================
-# @grpc/grpc-js 1.8.22, fixed in 1.9.16 / 1.10.12 / 1.11.4 / 1.12.7 / 1.13.5 /
-# 1.14.4. Transitive runtime dependency present in the image's node_modules.
-# Bumping it is upstream's call — we mirror louislam's lockfile verbatim and
-# do not override npm versions (same policy as the rest of this file). Both
-# are DoS-only (process crash); neither yields code execution or data access.
-# Revisit when louislam bumps @grpc/grpc-js (next uptime-kuma release that
-# touches the lockfile), or by 2026-11 — whichever first.
-
-# CVE-2026-48068 — "a malformed request can cause a server crash."
-# Server-side sink. uptime-kuma uses grpc-js only as a CLIENT (the gRPC
-# monitor dials out to a user-configured endpoint); it does not operate a
-# gRPC server, so the vulnerable server code path is not present.
+# @grpc/grpc-js 1.8.22 — malformed request crashes a server (48068), malformed
+# compressed message crashes client or server (48069). DoS only.
+# uptime-kuma uses grpc-js as a client only; it operates no gRPC server. The
+# client path needs an operator to point a gRPC monitor at a hostile endpoint.
 CVE-2026-48068
-
-# CVE-2026-48069 — "an incoming malformed compressed message can cause a
-# client or server crash." Client path is reachable only if an operator
-# configures a gRPC monitor pointing at a hostile/malfunctioning endpoint
-# that returns a malformed compressed message — operator-controlled,
-# self-inflicted DoS of the monitoring process. Not exposed to untrusted
-# inbound traffic.
 CVE-2026-48069
 
 # ============================================================================
-# 2.4.0 rescan wave (2026-07) — npm-layer findings surfaced by the CVE
-# database advancing after the image was built. The chromium fraction of the
-# same rescan (all CRITICALs + most HIGHs) is NOT waived: it clears on a
-# rebuild because Debian bookworm now ships chromium 150.0.7871.100-1~deb12u1,
-# above every fix floor. Only the npm-layer CVEs below need waivers — they are
-# pinned in uptime-kuma's package-lock.json@2.4.0 and a same-tag rebuild
-# re-resolves the same versions (fix floors sit outside the tilde ranges), so
-# they close only on an upstream uptime-kuma release. Same "build-system fork
-# only, no source-code fork" invariant as the protobufjs/liquidjs blocks above.
+# cloudflared (installed from Cloudflare's apt repo). Idle unless a Cloudflare
+# Tunnel monitor is configured; we configure none. We cannot bump what it
+# vendors without Cloudflare rebuilding the .deb.
 # ============================================================================
 
-# CVE-2026-48712 — protobufjs Denial of Service via uncontrolled recursion
-# with a crafted protobuf payload (HIGH). Fix in protobufjs 7.6.1 / 8.4.1.
-# uptime-kuma 2.4.0 pins `"protobufjs": "~7.2.6"` directly; installed 7.2.6.
-# The tilde range keeps a rebuild on 7.2.x, so this is NOT rebuild-closable.
-#
-# Same library, same single call site, same reachability story as the
-# CVE-2026-41242 / 44289–44293 protobufjs block above: server/monitor-types/
-# grpc.js loads a user-supplied .proto and decodes gRPC responses against it.
-# The recursion-DoS fires on decode() of attacker-shaped wire bytes — gRPC
-# monitor active. We do NOT use the gRPC monitor type in any deployment of
-# this image; grpc.js sits in the require graph but its decode path is never
-# invoked. DoS only (event-loop stall of the monitoring process).
-#
-# Revisit triggers (any one reverts the waiver):
-#   1. A gRPC monitor is added to any instance running this image — revert.
-#   2. louislam bumps protobufjs to >= 7.6.1 — clears this together with the
-#      41242 / 44289–44293 block.
-#   3. Calendar fallback: 2026-11.
-CVE-2026-48712
+# Go stdlib 1.26.4 — os.Root symlink-following traversal (HIGH). Fix 1.26.5.
+# cloudflared's filesystem operations run on operator- and config-supplied
+# paths, never on network-reachable input.
+# NOTE: this ID also applied to our own stage-1 healthcheck binary. That
+# occurrence is FIXED, not waived — GOLANG_BASE is 1.26.5-bookworm. A
+# .trivyignore line cannot scope by binary, so it mutes both.
+CVE-2026-39822
 
-# CVE-2026-12151 — undici Denial of Service due to unbounded memory growth
-# via WebSocket frames (HIGH). Fix in undici 6.27.0 / 7.28.0 / 8.5.0.
-# uptime-kuma 2.4.0 pulls undici 6.26.0 into the runtime image transitively
-# via exactly one prod path: node_modules/cheerio/node_modules/undici. (The
-# other two copies in the lockfile — 7.26.0 via testcontainers, 5.29.0
-# top-level — are dev=true and pruned by `npm prune --omit=dev`.)
-#
-# Exploit prerequisite: the application opens an undici WebSocket client to
-# an attacker-controlled server that then streams frames to exhaust memory.
-# cheerio uses undici only for its optional load-from-URL fetch helper;
-# uptime-kuma feeds cheerio already-fetched HTML strings (keyword monitor),
-# never a URL, so cheerio's undici path — and thus the WebSocket client — is
-# never invoked. The vulnerable code is present but statically unreachable
-# from any uptime-kuma call site. DoS only.
-#
-# Revisit when louislam / cheerio bump undici to >= 6.27.0, or 2026-11.
-CVE-2026-12151
-
-# CVE-2026-52746 — jsonata resource exhaustion via malicious inputs to the
-# "$toMillis" function (HIGH, DoS). Fix in jsonata 2.2.0. uptime-kuma 2.4.0
-# pins `"jsonata": "~2.1.0"` directly; installed 2.1.1. Fix 2.2.0 is outside
-# the tilde range, so NOT rebuild-closable — needs an upstream bump.
-#
-# Reachability: jsonata backs the json-query monitor type — it evaluates a
-# JSONata expression against a monitored endpoint's JSON response. The
-# expression itself (where "$toMillis" would be written) is admin-supplied
-# via the authenticated monitor-config UI; only the evaluated *data* comes
-# from the probe target. Triggering the resource exhaustion requires the
-# operator to author a pathological expression, or attacker-influenced data
-# to reach a $toMillis call inside an operator-written expression. Worst case
-# is a transient event-loop stall of the monitoring process — DoS only, no
-# RCE or privilege-boundary crossing.
-#
-# Revisit when louislam bumps jsonata to >= 2.2.0, or 2026-11.
-CVE-2026-52746
-
-# GHSA-p6gq-j5cr-w38f — nodemailer message-level `raw` option bypasses
-# disableFileAccess / disableUrlAccess, enabling arbitrary file/URL access
-# (HIGH). Fix in nodemailer 9.0.1. uptime-kuma 2.4.0 pins `"nodemailer":
-# "~7.0.13"` directly; installed 7.0.13. Fix 9.0.1 is two majors out, so NOT
-# rebuild-closable — needs an upstream bump.
-#
-# Reachability: nodemailer is the SMTP notification provider. The bypass
-# requires the caller to set the message-level `raw` option with attacker-
-# controlled content. uptime-kuma's smtp provider constructs the message from
-# admin-configured notification settings (subject/body/recipients) and does
-# not expose the `raw` option to external/probe input. Reaching the bug needs
-# an operator to craft a malicious `raw` message via the authenticated
-# notification-config UI — an escalation from an already-authenticated admin,
-# not a new privilege boundary for a remote attacker.
-#
-# Revisit when louislam bumps nodemailer to >= 9.0.1, or 2026-11.
-GHSA-p6gq-j5cr-w38f
-
-# CVE-2026-12143 — form-data form-field override via CRLF injection (HIGH).
-# Fix in form-data 4.0.6 (also 2.5.6 / 3.0.5). uptime-kuma 2.4.0 pins
-# `"form-data": "~4.0.5"` directly; installed 4.0.5. Although 4.0.6 is inside
-# the `~4.0.5` range, `npm ci` installs the lockfile-pinned 4.0.5 verbatim, so
-# a same-tag rebuild does NOT pick it up — closable only when louislam
-# refreshes the lockfile.
-#
-# Exploit prerequisite: an attacker must control a multipart field name or
-# filename that uptime-kuma passes into a form-data body, letting injected
-# CRLF sequences forge additional multipart fields in an OUTBOUND request.
-# uptime-kuma builds multipart bodies only in notification/monitor code with
-# field names hardcoded by the provider; no external/probe input flows into a
-# form-data field name. Integrity of an outbound request at worst, not a
-# server-side compromise.
-#
-# Revisit when louislam refreshes the lockfile to form-data >= 4.0.6, or
-# 2026-11.
-CVE-2026-12143
-
-# CVE-2026-48815 — sigstore `certificateOIDs` verification constraints are
-# silently dropped and never enforced (HIGH). Fix in sigstore 4.1.1.
-#
-# NOTE: sigstore is NOT a uptime-kuma dependency — it does not appear in
-# uptime-kuma's package-lock.json at all. Trivy flags it because npm itself
-# bundles `sigstore` (for package-provenance verification) inside the
-# node:22-bookworm-slim base image at /usr/local/lib/node_modules/npm/. Our
-# container runs `node server/server.js` and never executes `npm install`, so
-# the sigstore verification code is never reached at runtime — it is npm
-# tooling that sits dormant in the image.
-#
-# This is closable two ways, neither being the source rebuild: (a) a NODE_BASE
-# digest bump to a node:22-bookworm-slim that bundles npm with sigstore
-# >= 4.1.1 (Renovate territory, pinDigests), or (b) this waiver. Waived for
-# now because it is runtime-unreachable; will clear naturally on the next
-# NODE_BASE bump.
-#
-# Revisit on the next NODE_BASE digest bump, or 2026-11.
-CVE-2026-48815
-
-# CVE-2026-48779 — ws Denial of Service via memory exhaustion from small
-# WebSocket fragments (HIGH). Fix in ws 8.21.0 (also 5.2.5 / 6.2.4 / 7.5.11).
-# uptime-kuma 2.4.0 carries ws in the runtime image as: 8.19.0 (direct,
-# `"ws": "~8.19.0"`), 8.20.1 (via engine.io / engine.io-client /
-# socket.io-adapter — the socket.io transport), and 7.5.11 (via mqtt). All
-# below the 8.21.0 fix; the tilde/transitive pins keep a rebuild below it, so
-# NOT rebuild-closable — needs an upstream bump.
-#
-# Honest exposure — unlike the other entries in this wave, this one IS
-# network-reachable pre-auth: the 8.20.1 copies back socket.io, i.e. the
-# uptime-kuma dashboard's real-time WebSocket channel. A client can open that
-# socket before authenticating and stream tiny fragments to grow server
-# memory. So the "admin-gated" argument does NOT apply here.
-#
-# Why we accept the risk for THIS deployment:
-#  1. Impact is memory-exhaustion DoS only — the process may be OOM-killed and
-#     restarted by the container runtime. No RCE, no data access, no
-#     privilege-boundary crossing.
-#  2. Same posture as the liquidjs CVE-2026-45618 acceptance above: this
-#     image's dashboard is not exposed to untrusted networks — it runs on our
-#     internal segment behind network controls, so the pre-auth socket is not
-#     reachable by arbitrary remote clients.
-#  3. mqtt's 7.5.11 copy is a monitor-side WebSocket *client* (self-inflicted
-#     only), not an inbound server surface.
-#
-# Revisit triggers (any one reverts the waiver):
-#  1. This image's dashboard becomes reachable from an untrusted network —
-#     revert; the containment that this waiver rests on is then gone.
-#  2. louislam bumps ws / socket.io to pull ws >= 8.21.0 — clear and rebuild.
-#  3. Calendar fallback: 2026-11.
-CVE-2026-48779
+# grpc-go v1.81.1 — xDS RBAC authz bypass (~8.2) and panic (~5.9), plus an
+# HTTP/2 rapid-reset mitigation bypass (~7.5). Fix 1.82.1.
+# Not closable by our nightly apt refresh either: cloudflare/cloudflared@master
+# still declares v1.81.1 (checked 2026-07-27). cloudflared is not xDS-managed,
+# so the RBAC engine is dead code in it; the rapid-reset bug targets a gRPC
+# server, while cloudflared's gRPC use is client-side toward Cloudflare's edge.
+GHSA-hrxh-6v49-42gf
