@@ -44,14 +44,58 @@ CVE-2026-31802
 CVE-2026-59873
 CVE-2026-59874
 
-# brace-expansion 2.1.1 + 1.1.15: exponential expand() (13149) and unbounded
-# result length causing an uncatchable OOM (14257). DoS only.
-# 14257 is patched ONLY in 5.0.8 — the 1.x/2.x maintenance branches (1.1.16,
-# 2.1.2) predate the advisory, so nobody downstream of glob/minimatch can fix
-# it yet. Reachable only via minimatch/glob patterns; server/ has no such call
-# site.
-CVE-2026-13149
+# brace-expansion 1.1.16 (under glob→minimatch@3) + 2.1.2 (under minimatch@9,
+# pulled by redbean-node's glob@10): unbounded result length causing an
+# uncatchable OOM (14257) and unbounded intermediate arrays that bypass the
+# 14257 mitigation (69152). DoS only, both A:H with no confidentiality or
+# integrity impact.
+# Correction to the earlier note here: the maintenance branches DID get
+# backports — 1.1.17/2.1.3 for 14257, 1.1.18/2.1.4 for 69152 — and both are
+# inside minimatch's `^1.1.7`/`^2.0.1` ranges. So this is fixable by an
+# upstream `npm update`, not by us: package-lock.json pins the old versions
+# and we do not fork the lockfile.
+# Reachable only through a minimatch/glob pattern. No require("glob") or
+# require("minimatch") anywhere in server/, src/ or extra/; the only prod
+# consumers are redbean-node's ORM globbing and cacache/node-gyp/rimraf, all
+# on literal internal paths. No attacker-controlled pattern reaches expand().
+# REVERT IF: upstream adds a glob/minimatch call site fed by user input.
 CVE-2026-14257
+CVE-2026-69152
+
+# socket.io-parser 4.2.6 (under socket.io ~4.8.3) — a crafted packet makes the
+# decoder announce binary attachments and buffer reconstructor state that
+# never completes; repeated, it exhausts memory (HIGH, CVSS 3.1 A:H only).
+# Fix 4.2.7 satisfies socket.io's `~4.2.4` range, so again an upstream
+# lockfile refresh closes it; the pin is what blocks us. No workaround exists
+# per the advisory (GHSA-2m8v-j782-fhvr).
+# Honest exposure — this is the weakest waiver in the file: the decoder sits
+# on the dashboard's socket.io endpoint and runs BEFORE authentication.
+# server/uptime-kuma-server.js allowRequest() admits every polling connection
+# and every websocket without an Origin header, so anyone who can reach the
+# port can drive it. Accepted on impact ceiling, not on unreachability: worst
+# case is an OOM-kill and a container restart (no code execution, no data
+# exposure), and this image's dashboard runs on our internal segment only.
+# Same acceptance basis as CVE-2026-48779 carried previously.
+# REVERT IF: the dashboard becomes reachable from an untrusted network, or
+# upstream refreshes the lockfile — whichever comes first. Re-check every bump.
+CVE-2026-69185
+
+# ip-address 10.2.0 (under socks, via socks-proxy-agent and the mongodb
+# driver) — Address4 parses a leading-zero octet as decimal while resolvers
+# read it as octal, so `012.0.0.1` classifies as public but connects to
+# 10.0.0.1 (CVSS 4.0 = 7.7, scored almost entirely on SC:H — the compromised
+# security boundary, VC:L/VI:N/VA:N on the vulnerable system itself).
+# The entire impact of this CVE is a trust-boundary bypass, and uptime-kuma
+# builds no such boundary: no isPrivate/isLoopback/isInSubnet/isLinkLocal call
+# anywhere in server/ or src/, and no SSRF filter to bypass. Pointing a
+# monitor at an internal host is the product's purpose, and monitor targets
+# are admin-supplied through the authenticated UI. socks only uses the parse
+# result to choose the SOCKS address type for a connection the operator
+# already asked for.
+# Fix 10.3.1 is inside socks' `^10.1.1` range — upstream lockfile refresh.
+# REVERT IF: uptime-kuma ever adds a target allow/deny list built on
+# ip-address; then this becomes a real SSRF bypass rather than a non-issue.
+CVE-2026-69192
 
 # protobufjs 7.2.6 — RCE via crafted .proto (41242, CVSS 9.8), plus the
 # follow-on family: decode recursion DoS (44289), option-path DoS (44290),
@@ -75,11 +119,6 @@ CVE-2026-48712
 # utility functions only; _.template is never invoked.
 CVE-2026-4800
 
-# undici 6.26.0 via cheerio — WebSocket memory-exhaustion DoS (HIGH).
-# cheerio's undici path is its load-from-URL helper; uptime-kuma feeds cheerio
-# pre-fetched HTML strings, never a URL, so it is never invoked.
-CVE-2026-12151
-
 # jsonata 2.1.1 — $toMillis resource exhaustion (HIGH, DoS). Fix 2.2.0,
 # outside the `~2.1.0` pin. Backs the json-query monitor; the expression is
 # admin-supplied via the authenticated UI, only the evaluated data comes from
@@ -90,12 +129,6 @@ CVE-2026-52746
 # disableUrlAccess (HIGH). Fix 9.0.1, two majors out. The smtp provider builds
 # messages from admin-configured settings and never exposes `raw`.
 GHSA-p6gq-j5cr-w38f
-
-# form-data 4.0.5 — form-field override via CRLF injection (HIGH). Fix 4.0.6
-# is inside the `~4.0.5` range but the lockfile pins 4.0.5, so it needs an
-# upstream lockfile refresh. Field names are hardcoded per provider; no
-# external input reaches one. Affects integrity of an outbound request only.
-CVE-2026-12143
 
 # liquidjs 10.26.0 — the `pop` filter skips memoryLimit accounting. Fix
 # 10.27.1, outside the `~10.26.0` pin.
@@ -117,13 +150,16 @@ CVE-2026-55575
 # REVERT IF: any interceptors.request.use appears. Grep on every upstream bump.
 GHSA-gcfj-64vw-6mp9
 
-# ws 8.19.0 / 8.20.1 / 7.5.11 — memory-exhaustion DoS from small WebSocket
-# fragments (HIGH). Fix 8.21.0.
-# Honest exposure: the 8.20.1 copies back socket.io, i.e. the dashboard's
-# real-time channel, reachable PRE-AUTH. The admin-gated argument does not
-# apply here. Accepted because the impact ceiling is an OOM-kill plus
-# container restart, and this image's dashboard runs on our internal segment.
-# REVERT IF: the dashboard becomes reachable from an untrusted network.
+# ws 8.19.0 — memory-exhaustion DoS from small WebSocket fragments (HIGH).
+# Fix 8.21.0.
+# Scope shrank at 2.5.0: engine.io / engine.io-client / socket.io-adapter now
+# resolve ws 8.21.1 and mqtt resolves 7.5.12, all fixed. What remains is the
+# top-level `ws@~8.19.0` pin, whose only call site is
+# server/monitor-types/websocket-upgrade.js — an OUTBOUND client toward an
+# operator-configured probe target. The pre-auth dashboard exposure this entry
+# used to carry is gone.
+# REVERT IF: a server-side ws listener appears, or ws is used to accept
+# inbound connections.
 CVE-2026-48779
 
 # @grpc/grpc-js 1.8.22 — malformed request crashes a server (48068), malformed
