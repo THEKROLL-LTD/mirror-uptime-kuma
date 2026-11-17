@@ -72,9 +72,17 @@
 # still carries these same eight IDs against its own vendored Go 1.26.4 and
 # is waived in .trivyignore (a .trivyignore line cannot scope by binary, so
 # those lines mute this binary too — the fix here is what actually matters).
+# GOLANG_BASE bumped 2026-11-17 to 1.26.11-bookworm for the Go stdlib CVEs in
+# issue #41: CVE-2026-78667 (net/http Range DoS), -78669 (net/http2 DoS),
+# -97031 (crypto/tls ECH DoS), -111943 (crypto/x509 intermediate-cert MITM).
+# Fix floors 1.26.9 / 1.26.10; we take 1.26.11 (latest patch). Same shape as
+# before: the healthcheck is a localhost HTTP probe with no TLS and no
+# attacker-controlled input, so this is fixed rather than waived because a
+# stable toolchain exists, not because there was a runtime vector.
+# NODE_BASE digest refreshed the same day (same 22-bookworm-slim tag).
 # Renovate (see renovate.json.example, pinDigests: true) bumps these.
-ARG NODE_BASE=node:22-bookworm-slim@sha256:d415caac2f1f77b98caaf9415c5f807e14bc8d7bdea62561ea2fef4fbd08a73c
-ARG GOLANG_BASE=golang:1.26.8-bookworm@sha256:9fdc884aacc3bec89b20ffc69f4bb369c78210e3e4f600387b5128b12c199f81
+ARG NODE_BASE=node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee
+ARG GOLANG_BASE=golang:1.26.11-bookworm@sha256:dc40a13b61304647ed7e5d581d246b86413dfc29d63c6d018310feb93cd98fc0
 
 # === Stage 1: healthcheck binary ============================================
 # Replaces upstream's docker/builder-go.dockerfile (golang:1-buster, EOL).
